@@ -1,14 +1,14 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Search as SearchIcon, FileText, Mic, Calendar, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Search as SearchIcon, FileText, Mic, Calendar, ArrowRight, ArrowLeft, Loader2 } from 'lucide-react';
 
 interface Result {
     type: 'source' | 'artifact';
@@ -21,7 +21,7 @@ interface Result {
     snippet: string;
 }
 
-export default function SearchPage() {
+function SearchContent() {
     const searchParams = useSearchParams();
     const router = useRouter();
     const initialQuery = searchParams.get('q') || '';
@@ -148,5 +148,21 @@ export default function SearchPage() {
                 ))}
             </div>
         </div>
+    );
+}
+
+function SearchFallback() {
+    return (
+        <div className="container mx-auto px-4 py-8 max-w-4xl flex items-center justify-center min-h-[50vh]">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+    );
+}
+
+export default function SearchPage() {
+    return (
+        <Suspense fallback={<SearchFallback />}>
+            <SearchContent />
+        </Suspense>
     );
 }
