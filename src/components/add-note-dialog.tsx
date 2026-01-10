@@ -28,9 +28,10 @@ import { useRouter } from 'next/navigation';
 
 interface AddNoteDialogProps {
     patientId: string;
+    asMobileButton?: boolean;
 }
 
-export function AddNoteDialog({ patientId }: AddNoteDialogProps) {
+export function AddNoteDialog({ patientId, asMobileButton = false }: AddNoteDialogProps) {
     const [open, setOpen] = useState(false);
     const [noteType, setNoteType] = useState<'INTERNAL_NOTE' | 'REFERRER_LETTER'>('INTERNAL_NOTE');
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]); // Today's date
@@ -59,13 +60,22 @@ export function AddNoteDialog({ patientId }: AddNoteDialogProps) {
         });
     };
 
+    const triggerButton = asMobileButton ? (
+        <Button variant="ghost" size="sm" className="flex-col h-auto py-2 px-3 gap-1">
+            <Plus className="h-5 w-5" />
+            <span className="text-[10px]">Add Note</span>
+        </Button>
+    ) : (
+        <Button size="sm" className="gap-2">
+            <Plus className="h-4 w-4" />
+            Add Note
+        </Button>
+    );
+
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-                <Button size="sm" className="gap-2">
-                    <Plus className="h-4 w-4" />
-                    Add Note
-                </Button>
+                {triggerButton}
             </DialogTrigger>
             <DialogContent className="sm:max-w-[600px] max-h-[90vh] flex flex-col">
                 <DialogHeader>

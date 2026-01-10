@@ -9,15 +9,16 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { Sparkles, Loader2 } from 'lucide-react';
+import { Sparkles, Loader2, Scan } from 'lucide-react';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 
 interface GlobalScanButtonProps {
     patientId: string;
+    asMobileButton?: boolean;
 }
 
-export function GlobalScanButton({ patientId }: GlobalScanButtonProps) {
+export function GlobalScanButton({ patientId, asMobileButton = false }: GlobalScanButtonProps) {
     const [model, setModel] = useState('gemini-flash');
     const [isScanning, setIsScanning] = useState(false);
     const router = useRouter();
@@ -90,6 +91,26 @@ export function GlobalScanButton({ patientId }: GlobalScanButtonProps) {
         }
     };
 
+    // Mobile button: simple icon-only button that just triggers scan with default model
+    if (asMobileButton) {
+        return (
+            <Button
+                variant="ghost"
+                size="sm"
+                className="flex-col h-auto py-2 px-3 gap-1"
+                onClick={handleScanAll}
+                disabled={isScanning}
+            >
+                {isScanning ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                    <Scan className="h-5 w-5" />
+                )}
+                <span className="text-[10px]">{isScanning ? 'Scanning...' : 'Scan All'}</span>
+            </Button>
+        );
+    }
+
     return (
         <div className="flex items-center gap-2">
             <Select value={model} onValueChange={setModel} disabled={isScanning}>
@@ -119,3 +140,4 @@ export function GlobalScanButton({ patientId }: GlobalScanButtonProps) {
         </div>
     );
 }
+

@@ -17,9 +17,10 @@ import { UserCog } from "lucide-react";
 
 interface PatientInfoToggleProps {
     patient: PatientDetails;
+    asMobileButton?: boolean;
 }
 
-export function PatientInfoToggle({ patient }: PatientInfoToggleProps) {
+export function PatientInfoToggle({ patient, asMobileButton = false }: PatientInfoToggleProps) {
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [formData, setFormData] = useState<Partial<PatientDetails>>({
@@ -61,13 +62,22 @@ export function PatientInfoToggle({ patient }: PatientInfoToggleProps) {
         }
     };
 
+    const triggerButton = asMobileButton ? (
+        <Button variant="ghost" size="sm" className="flex-col h-auto py-2 px-3 gap-1">
+            <UserCog className="h-5 w-5" />
+            <span className="text-[10px]">Details</span>
+        </Button>
+    ) : (
+        <Button variant="outline" size="sm" className="gap-2">
+            <UserCog className="h-4 w-4" />
+            Patient Details
+        </Button>
+    );
+
     return (
         <Popover open={open} onOpenChange={setOpen}>
             <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-2">
-                    <UserCog className="h-4 w-4" />
-                    Patient Details
-                </Button>
+                {triggerButton}
             </PopoverTrigger>
             <PopoverContent className="w-[600px] p-6" align="start">
                 <div className="grid gap-6">

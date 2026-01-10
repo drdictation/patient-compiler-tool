@@ -149,7 +149,7 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
     return (
         <div className="space-y-4">
             {/* --- SEARCH & FILTERS BAR --- */}
-            <div className="bg-white p-4 rounded-lg border shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
+            <div className="bg-white p-3 md:p-4 rounded-lg border shadow-sm space-y-3 md:space-y-0 md:flex md:flex-row md:gap-4 md:items-center md:justify-between">
 
                 {/* Search Input */}
                 <div className="relative w-full md:w-96">
@@ -162,40 +162,44 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                     />
                 </div>
 
-                {/* Filters & Sort */}
-                <div className="flex items-center gap-4 w-full md:w-auto overflow-x-auto">
+                {/* Filters & Sort - Horizontally scrollable on mobile */}
+                <div className="flex items-center gap-3 overflow-x-auto pb-1 md:pb-0 scrollbar-hide">
 
                     {/* Recall Filter */}
-                    <div className="flex items-center space-x-2 border-r pr-4">
+                    <div className="flex items-center space-x-2 flex-shrink-0">
                         <Switch
                             id="filter-recall"
                             checked={filterRecall}
-                            onCheckedChange={(c) => { setFilterRecall(c); updateFilter('filter_recall', c); }}
+                            onCheckedChange={(c: boolean) => { setFilterRecall(c); updateFilter('filter_recall', c); }}
                         />
-                        <Label htmlFor="filter-recall" className="text-sm cursor-pointer whitespace-nowrap">
-                            Due Recall (30d)
+                        <Label htmlFor="filter-recall" className="text-xs md:text-sm cursor-pointer whitespace-nowrap">
+                            Recall
                         </Label>
                     </div>
 
+                    <div className="w-px h-6 bg-slate-200 flex-shrink-0" />
+
                     {/* Pending Actions Filter */}
-                    <div className="flex items-center space-x-2 border-r pr-4">
+                    <div className="flex items-center space-x-2 flex-shrink-0">
                         <Switch
                             id="filter-suggested"
                             checked={filterSuggested}
-                            onCheckedChange={(c) => { setFilterSuggested(c); updateFilter('filter_suggested', c); }}
+                            onCheckedChange={(c: boolean) => { setFilterSuggested(c); updateFilter('filter_suggested', c); }}
                         />
-                        <Label htmlFor="filter-suggested" className="text-sm cursor-pointer whitespace-nowrap">
-                            Pending Tasks
+                        <Label htmlFor="filter-suggested" className="text-xs md:text-sm cursor-pointer whitespace-nowrap">
+                            Pending
                         </Label>
                     </div>
 
+                    <div className="w-px h-6 bg-slate-200 flex-shrink-0" />
+
                     {/* Sort Dropdown */}
                     <Select value={sort} onValueChange={(v) => { setSort(v); updateSort(v); }}>
-                        <SelectTrigger className="w-[160px]">
-                            <SelectValue placeholder="Sort by" />
+                        <SelectTrigger className="w-[120px] md:w-[160px] flex-shrink-0">
+                            <SelectValue placeholder="Sort" />
                         </SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="last_seen">Recent Activity</SelectItem>
+                            <SelectItem value="last_seen">Recent</SelectItem>
                             <SelectItem value="name">Name (A-Z)</SelectItem>
                             <SelectItem value="recall">Recall Date</SelectItem>
                         </SelectContent>
@@ -252,7 +256,8 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                     </div>
                 )}
 
-                <div className="border rounded-lg overflow-hidden bg-white shadow-sm">
+                {/* --- DESKTOP TABLE (hidden on mobile) --- */}
+                <div className="border rounded-lg overflow-hidden bg-white shadow-sm hidden md:block">
                     <table className="w-full text-sm text-left">
                         <thead className="bg-slate-50 text-slate-500 font-medium border-b">
                             <tr>
@@ -263,7 +268,7 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                                     />
                                 </th>
                                 <th className="py-3 px-4">Patient Name</th>
-                                <th className="py-3 px-4 hidden md:table-cell">Identity</th>
+                                <th className="py-3 px-4">Identity</th>
                                 <th className="py-3 px-4">Last Seen</th>
                                 <th className="py-3 px-4">Next Recall</th>
                                 <th className="py-3 px-4 text-right">Actions</th>
@@ -291,7 +296,7 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                                             )}
                                         </Link>
                                     </td>
-                                    <td className="py-3 px-4 hidden md:table-cell">
+                                    <td className="py-3 px-4">
                                         <div className="flex items-center gap-2">
                                             <span className="font-mono text-xs text-muted-foreground bg-slate-100 px-1.5 py-0.5 rounded">
                                                 {patient.normalized_name}
@@ -341,6 +346,61 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                             )}
                         </tbody>
                     </table>
+                </div>
+
+                {/* --- MOBILE CARD LIST (visible only on mobile) --- */}
+                <div className="md:hidden space-y-3">
+                    {initialPatients.length === 0 && (
+                        <div className="py-12 text-center text-muted-foreground border-2 border-dashed rounded-lg bg-white">
+                            <p className="mb-2">No patients found.</p>
+                            <p className="text-xs">Adjust your search or filters.</p>
+                        </div>
+                    )}
+                    {initialPatients.map((patient) => (
+                        <div
+                            key={patient.id}
+                            className={`bg-white border rounded-lg p-4 shadow-sm ${selectedIds.includes(patient.id) ? 'ring-2 ring-primary' : ''}`}
+                        >
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="flex items-start gap-3 flex-1 min-w-0">
+                                    <Checkbox
+                                        checked={selectedIds.includes(patient.id)}
+                                        onCheckedChange={() => toggleSelect(patient.id)}
+                                        className="mt-1"
+                                    />
+                                    <Link href={`/patient/${patient.id}`} className="flex-1 min-w-0">
+                                        <h3 className="font-semibold text-slate-900 truncate">
+                                            {patient.display_name}
+                                        </h3>
+                                        {patient.referring_doctor && (
+                                            <p className="text-xs text-muted-foreground truncate">
+                                                Ref: {patient.referring_doctor}
+                                            </p>
+                                        )}
+                                        <div className="flex items-center gap-3 mt-2 text-xs text-slate-500">
+                                            <span>Seen: {patient.last_seen ? new Date(patient.last_seen).toLocaleDateString() : 'Never'}</span>
+                                            {patient.next_recall_date && (
+                                                <span className={new Date(patient.next_recall_date) < new Date() ? "text-red-500 font-medium" : ""}>
+                                                    Recall: {new Date(patient.next_recall_date).toLocaleDateString()}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </Link>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    {(patient.suggested_items_count || 0) > 0 && (
+                                        <Badge variant="secondary" className="bg-amber-100 text-amber-700 text-[10px] h-5 px-1.5">
+                                            {patient.suggested_items_count}
+                                        </Badge>
+                                    )}
+                                    <PatientRowActions
+                                        patientId={patient.id}
+                                        patientName={patient.display_name}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    ))}
                 </div>
             </div>
         </div>

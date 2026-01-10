@@ -82,30 +82,48 @@ export default async function Dashboard(props: DashboardProps) {
   }
 
   return (
-    <div className="container mx-auto py-8 px-4">
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-bold flex items-center gap-2">
-            <Users className="h-8 w-8" />
-            Patient Compiler
-          </h1>
-          <p className="text-xs text-muted-foreground mt-1 ml-11 font-mono">
-            Total Records Synced: {totalRecords || 0}
-          </p>
+    <div className="container mx-auto py-4 md:py-8 px-4">
+      {/* Mobile: Stack header vertically. Desktop: Side-by-side */}
+      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-6">
+
+        {/* Title Row */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
+              <Users className="h-6 w-6 md:h-8 md:w-8" />
+              Patient Compiler
+            </h1>
+            <p className="text-xs text-muted-foreground mt-1 ml-8 md:ml-11 font-mono">
+              {totalRecords || 0} records synced
+            </p>
+          </div>
+
+          {/* Mobile-only compact action buttons */}
+          <div className="flex gap-2 md:hidden">
+            <AddPatientDialog />
+            <Link href="/search">
+              <Button variant="outline" size="icon" title="Search">
+                <Search className="h-4 w-4" />
+              </Button>
+            </Link>
+            <SyncButton />
+          </div>
         </div>
 
-        <div className="w-64 h-24 hidden md:block">
-          <LLMCostDisplay />
-        </div>
-
-        <div className="flex gap-2">
-          <AddPatientDialog />
-          <Link href="/search">
-            <Button variant="outline" size="icon" title="Search Everything">
-              <Search className="h-4 w-4" />
-            </Button>
-          </Link>
-          <SyncButton />
+        {/* Desktop: LLM Cost Widget + Actions Row */}
+        <div className="hidden md:flex items-center gap-4">
+          <div className="w-64 h-24">
+            <LLMCostDisplay />
+          </div>
+          <div className="flex gap-2">
+            <AddPatientDialog />
+            <Link href="/search">
+              <Button variant="outline" size="icon" title="Search Everything">
+                <Search className="h-4 w-4" />
+              </Button>
+            </Link>
+            <SyncButton />
+          </div>
         </div>
       </div>
 

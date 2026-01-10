@@ -32,6 +32,7 @@ import { useRouter } from 'next/navigation';
 interface SmartNoteDialogProps {
     patientId: string;
     patientName: string;
+    asMobileButton?: boolean;
 }
 
 type InputMode = 'paste' | 'record';
@@ -45,7 +46,7 @@ interface GenerationState {
     letter: GenerationStatus;
 }
 
-export function SmartNoteDialog({ patientId, patientName }: SmartNoteDialogProps) {
+export function SmartNoteDialog({ patientId, patientName, asMobileButton = false }: SmartNoteDialogProps) {
     const [open, setOpen] = useState(false);
     const [isPending, startTransition] = useTransition();
     const router = useRouter();
@@ -276,13 +277,22 @@ export function SmartNoteDialog({ patientId, patientName }: SmartNoteDialogProps
         );
     };
 
+    const triggerButton = asMobileButton ? (
+        <Button variant="ghost" size="sm" className="flex-col h-auto py-2 px-3 gap-1">
+            <Sparkles className="h-5 w-5" />
+            <span className="text-[10px]">Smart Note</span>
+        </Button>
+    ) : (
+        <Button size="sm" variant="outline" className="gap-2">
+            <Sparkles className="h-4 w-4" />
+            Smart Note
+        </Button>
+    );
+
     return (
         <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) resetState(); }}>
             <DialogTrigger asChild>
-                <Button size="sm" variant="outline" className="gap-2">
-                    <Sparkles className="h-4 w-4" />
-                    Smart Note
-                </Button>
+                {triggerButton}
             </DialogTrigger>
             <DialogContent className="sm:max-w-[700px] max-h-[90vh] flex flex-col">
                 <DialogHeader>

@@ -16,6 +16,7 @@ import { AddNoteDialog } from '@/components/add-note-dialog';
 import { SmartNoteDialog } from '@/components/smart-note-dialog';
 import { GlobalScanButton } from '@/components/global-scan-button';
 import { PatientInfoToggle } from '@/components/patient-info-toggle';
+import { PatientMobileActions } from '@/components/patient-mobile-actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -104,8 +105,8 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                     ongoingInterventionsCount={ongoingInterventionsCount}
                 />
 
-                {/* Main Content Area */}
-                <main className="flex-1 overflow-y-auto print:overflow-visible">
+                {/* Main Content Area - Add bottom padding on mobile for action bar */}
+                <main className="flex-1 overflow-y-auto print:overflow-visible pb-20 md:pb-0">
                     <div className="max-w-5xl mx-auto px-4 lg:px-8 py-8 space-y-8 print:max-w-full print:px-0">
 
                         {/* PRE-VISIT BRIEF */}
@@ -160,6 +161,13 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                     </div>
                 </main>
             </div>
+
+            {/* Mobile Action Bar - only visible on mobile */}
+            <PatientMobileActions
+                patientId={patient.id}
+                patientName={patient.display_name}
+                patient={patient}
+            />
         </div>
     );
 }
