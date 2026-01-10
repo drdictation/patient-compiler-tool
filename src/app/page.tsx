@@ -1,65 +1,115 @@
-import Image from "next/image";
 
-export default function Home() {
+import Link from 'next/link';
+import { supabase } from '@/lib/supabase';
+import { SyncButton } from '@/components/sync-button';
+import { Button } from '@/components/ui/button';
+import { Users, Search } from 'lucide-react';
+import { PatientList } from '@/components/patient-list';
+import { AddPatientDialog } from '@/components/add-patient-dialog';
+import { LLMCostDisplay } from '@/components/llm-cost-display';
+
+export const dynamic = 'force-dynamic';
+
+interface DashboardProps {
+  searchParams: Promise<{
+    search?: string;
+    sort?: string;
+    filter_recall?: string;
+    filter_suggested?: string;
+  }>;
+}
+
+export default async function Dashboard(props: DashboardProps) {
+  const searchParams = await props.searchParams;
+  const search = searchParams.search || '';
+  const sort = searchParams.sort || 'last_seen'; // 'name', 'last_seen', 'recall'
+  const filterRecall = searchParams.filter_recall === 'true';
+  const filterSuggested = searchParams.filter_suggested === 'true';
+
+  // Build Query
+  let query = supabase.from('patient_summary').select('*');
+
+  // 1. Search (Name or Referring Doctor)
+  if (search) {
+    // Note: 'or' syntax in Supabase is allowing search across multiple columns
+    // We need to ensure text search configuration or simple ilike
+    query = query.or(`display_name.ilike.%${search}%,referring_doctor.ilike.%${search}%`);
+  }
+
+  // 2. Filters
+  if (filterRecall) {
+    const today = new Date().toISOString().split('T')[0];
+    const thirtyDays = new Date();
+    thirtyDays.setDate(thirtyDays.getDate() + 30);
+    const thirtyDaysStr = thirtyDays.toISOString().split('T')[0];
+
+    // next_recall_date between Today and 30 days from now
+    query = query.gte('next_recall_date', today).lte('next_recall_date', thirtyDaysStr);
+  }
+
+  if (filterSuggested) {
+    query = query.gt('suggested_items_count', 0);
+  }
+
+  // 3. Sorting
+  if (sort === 'name') {
+    query = query.order('display_name', { ascending: true });
+  } else if (sort === 'recall') {
+    // Ascending because we want "Soonest" first, but NULLS LAST
+    query = query.order('next_recall_date', { ascending: true, nullsFirst: false });
+  } else {
+    // Default: Last Seen (Recent First)
+    query = query.order('last_seen', { ascending: false });
+  }
+
+  const { data: patients, error } = await query;
+
+  // Fetch total system count for verification
+  const { count: totalRecords } = await supabase
+    .from('source_record_cache')
+    .select('*', { count: 'exact', head: true });
+
+  if (error) {
+    return (
+      <div className="p-8 text-center text-red-500">
+        <h2 className="text-xl font-bold mb-2">Database Connection Error</h2>
+        <p>{error.message}</p>
+        <p className="text-sm mt-4 text-muted-foreground">
+          Did you run the Supabase setup SQL?
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <div className="container mx-auto py-8 px-4">
+      <div className="flex justify-between items-center mb-8">
+        <div>
+          <h1 className="text-3xl font-bold flex items-center gap-2">
+            <Users className="h-8 w-8" />
+            Patient Compiler
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="text-xs text-muted-foreground mt-1 ml-11 font-mono">
+            Total Records Synced: {totalRecords || 0}
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        <div className="w-64 h-24 hidden md:block">
+          <LLMCostDisplay />
         </div>
-      </main>
+
+        <div className="flex gap-2">
+          <AddPatientDialog />
+          <Link href="/search">
+            <Button variant="outline" size="icon" title="Search Everything">
+              <Search className="h-4 w-4" />
+            </Button>
+          </Link>
+          <SyncButton />
+        </div>
+      </div>
+
+      <PatientList initialPatients={patients || []} />
     </div>
   );
 }

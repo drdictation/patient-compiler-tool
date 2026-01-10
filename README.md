@@ -1,36 +1,31 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Patient Compiler Tool
 
-## Getting Started
+A clinician memory EMR that reads from Dr Dictation via Bridge API and maintains a longitudinal patient memory overlay.
 
-First, run the development server:
+## 🚀 Setup Instructions
 
+### 1. Configure Logic
+1. Copy `.env.example` to `.env.local`
+2. Set a strong password in `APP_PASSWORD`
+3. Generate a random string for `BRIDGE_API_KEY` (e.g. `openssl rand -hex 32`)
+
+### 2. Setup Supabase (Overlay Database)
+1. Create a project at [supabase.com](https://supabase.com)
+2. Go to SQL Editor and run the script from [`supabase_schema.md`](file:///Users/cbasnayake/.gemini/antigravity/brain/e1c38891-d807-4c53-bdc2-c9172a3c0692/supabase_schema.md)
+3. Get URL/Key from Settings -> API and put in `.env.local`
+
+### 3. Setup Dr Dictation Bridge (Data Source)
+1. In your Dr Dictation codebase, implement `transcriber/views/bridge.py` based on [`bridge_api_specification.md`](file:///Users/cbasnayake/.gemini/antigravity/brain/e1c38891-d807-4c53-bdc2-c9172a3c0692/bridge_api_specification.md)
+2. Deploy to Heroku
+3. Set `BRIDGE_API_KEY` in Heroku Config Vars to match `.env.local`
+
+### 4. Run Locally
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### 5. Sync
+- Log in with your password
+- Click "Sync Now" on the dashboard
+- It will pull records from Heroku and populate the list
