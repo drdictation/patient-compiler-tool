@@ -359,7 +359,7 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                     {initialPatients.map((patient) => (
                         <div
                             key={patient.id}
-                            className={`bg-white border rounded-lg p-4 shadow-sm ${selectedIds.includes(patient.id) ? 'ring-2 ring-primary' : ''}`}
+                            className={`bg-white border rounded-lg p-4 shadow-sm transition-all active:scale-[0.98] active:bg-slate-50 ${selectedIds.includes(patient.id) ? 'ring-2 ring-primary' : ''}`}
                         >
                             <div className="flex items-start justify-between gap-3">
                                 <div className="flex items-start gap-3 flex-1 min-w-0">
