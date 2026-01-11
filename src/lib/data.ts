@@ -166,3 +166,34 @@ export async function getPatientInterventions(patientId: string) {
 
     return data || [];
 }
+
+export interface PatientTask {
+    id: string;
+    task_description: string;
+    task_category: 'clinical' | 'administrative' | 'follow_up';
+    evidence_quote: string | null;
+    status: string;
+    lifecycle_state: string;
+    confidence: string;
+    snoozed_until: string | null;
+    created_at: string;
+}
+
+export async function getPatientTasks(patientId: string): Promise<PatientTask[]> {
+    const today = new Date().toISOString().split('T')[0];
+
+    const { data, error } = await supabase
+        .from('patient_task')
+        .select('*')
+        .eq('canonical_patient_id', patientId)
+        .eq('status', 'pending')
+        .or(`snoozed_until.is.null,snoozed_until.lte.${today}`)
+        .order('created_at', { ascending: false });
+
+    if (error) {
+        console.error('Error fetching tasks:', error);
+        return [];
+    }
+
+    return data || [];
+}

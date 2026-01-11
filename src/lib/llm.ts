@@ -196,6 +196,7 @@ async function callGemini(
             issues: items,
             investigations: items,
             interventions: items,
+            tasks: items,
             usage: { input_tokens: inputTokens, output_tokens: outputTokens },
             cost: cost
         };
@@ -293,6 +294,7 @@ async function callGroq(
             issues: items,
             investigations: items,
             interventions: items,
+            tasks: items,
             usage: { input_tokens: inputTokens, output_tokens: outputTokens },
             cost: cost
         };
@@ -475,7 +477,7 @@ export async function extractInterventions(opts: ExtractionOptions): Promise<Int
  * Models available for Smart Note generation.
  * Only Gemini 2.5 Flash and Gemini 3.0 Flash are supported.
  */
-export type SmartNoteModel = 'gemini-2.5-flash' | 'gemini-3.0-flash';
+export type SmartNoteModel = 'gemini-2.5-flash' | 'gemini-3.0-flash' | 'gemini-2.5-flash-lite';
 
 export interface SmartNoteGenerationResult {
     content: string;
@@ -508,7 +510,8 @@ export async function generateFromPrompt(
     // Map friendly names to API model names
     const modelMap: Record<SmartNoteModel, string> = {
         'gemini-2.5-flash': 'gemini-2.5-flash',
-        'gemini-3.0-flash': 'gemini-2.0-flash'  // Note: 3.0 Flash uses 2.0-flash endpoint
+        'gemini-3.0-flash': 'gemini-2.0-flash',  // Note: 3.0 Flash uses 2.0-flash endpoint
+        'gemini-2.5-flash-lite': 'gemini-2.5-flash-lite'
     };
 
     const apiModel = modelMap[model];
@@ -555,7 +558,11 @@ export async function generateFromPrompt(
 
         success = true;
 
-        const cost = calculateCost('gemini-flash' as LLMProvider, inputTokens, outputTokens); // Approx using flash pricing for now
+        let providerKey: LLMProvider = 'gemini-flash';
+        if (model === 'gemini-2.5-flash-lite') providerKey = 'gemini-flash-lite';
+        if (model === 'gemini-3.0-flash') providerKey = 'gemini-3.0-flash';
+
+        const cost = calculateCost(providerKey, inputTokens, outputTokens);
 
         void logLLMCall({
             provider: 'gemini',
@@ -596,4 +603,83 @@ export async function generateFromPrompt(
 
         throw e;
     }
+}
+
+// ========== TASK EXTRACTION ==========
+
+/**
+ * Represents a single extracted task from a transcript.
+ */
+export interface ExtractedTask {
+    task_description: string;
+    task_category: 'clinical' | 'administrative' | 'follow_up';
+    evidence_quote: string;
+    confidence: 'high' | 'medium' | 'low';
+}
+
+/**
+ * Result of task extraction including usage metrics.
+ */
+export interface TaskExtractionResult {
+    tasks: ExtractedTask[];
+    usage: {
+        input_tokens: number;
+        output_tokens: number;
+    };
+    cost: number;
+}
+
+/**
+ * Extract actionable tasks from a consultation transcript.
+ * Uses the TASK_EXTRACTION_PROMPT to identify clinical, administrative, and follow-up tasks.
+ * 
+ * @param transcript - The raw transcript text
+ * @param patientName - The patient's display name
+ * @param model - The Gemini model to use
+ * @param patientId - Optional patient ID for logging
+ */
+export async function extractTasks(
+    transcript: string,
+    patientName: string,
+    provider: LLMProvider, // Changed from SmartNoteModel to LLMProvider
+    patientId?: string
+): Promise<TaskExtractionResult> {
+    // Import prompt dynamically
+    const { TASK_EXTRACTION_PROMPT } = await import('./prompts');
+
+    // Remove the footer from the prompt if it exists (for using with extractGeneric)
+    // We want just the system instructions part
+    const systemInstructions = TASK_EXTRACTION_PROMPT.split('# Input Transcript')[0].trim();
+
+    // Prepare text with patient context
+    const textContext = `PATIENT NAME: ${patientName}\n\nTRANSCRIPT:\n${transcript}`;
+
+    // Use the generic extractor which supports both Gemini and Groq
+    const result = await extractGeneric<any>( // extracting 'any' first because extractGeneric returns array/object directly
+        textContext,
+        provider,
+        systemInstructions,
+        patientId,
+        'task_extraction'
+    );
+
+    // Normalize result to TaskExtractionResult
+    // extractGeneric returns the parsed JSON object/array
+    // Note: extractGeneric -> callGroq/callGemini returns { items: [], usage: {}, cost: {} } format or just array?
+    // Wait, callGemini/callGroq return { issues: items, investigations: items ... } wrapper.
+    // I need to update callGemini/callGroq to also include 'tasks' key or rely on 'items' being reusable.
+    // Actually, callGemini/callGroq returns an object with keys tailored for existing functions.
+    // I need to update callGemini/callGroq FIRST or handle the return object here.
+
+    // It seems callGeneric returns T, which is the return type of callGemini/callGroq.
+    // callGemini returns: { issues: items, investigations: items, interventions: items, usage, cost }
+    // I need to extract 'tasks' from this. Since 'items' is the parsed array, I can use issues/investigations/interventions property which all point to 'items'.
+
+    const items = (result as any).issues || []; // 'issues' contains the raw items array
+
+    return {
+        tasks: items,
+        usage: result.usage,
+        cost: result.cost
+    };
 }

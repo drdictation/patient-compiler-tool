@@ -1,6 +1,5 @@
-
 import Link from 'next/link';
-import { getPatientDetails, getPatientTimeline, getPatientIssues, getPatientInvestigations, getPatientInterventions } from '@/lib/data';
+import { getPatientDetails, getPatientTimeline, getPatientIssues, getPatientInvestigations, getPatientInterventions, getPatientTasks } from '@/lib/data';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -17,6 +16,7 @@ import { SmartNoteDialog } from '@/components/smart-note-dialog';
 import { GlobalScanButton } from '@/components/global-scan-button';
 import { PatientInfoToggle } from '@/components/patient-info-toggle';
 import { PatientMobileActions } from '@/components/patient-mobile-actions';
+import { TasksPanel } from '@/components/tasks-panel';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,6 +27,7 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
     const issues = await getPatientIssues(id);
     const investigations = await getPatientInvestigations(id);
     const interventions = await getPatientInterventions(id);
+    const tasks = await getPatientTasks(id);
 
     // Calculate counts for sidebar
     const activeIssuesCount = issues.filter(i =>
@@ -118,6 +119,11 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                                 investigations={investigations}
                                 interventions={interventions}
                             />
+                        </section>
+
+                        {/* TASKS PANEL */}
+                        <section id="tasks">
+                            <TasksPanel patientId={patient.id} tasks={tasks} />
                         </section>
 
                         {/* ISSUES PANEL */}

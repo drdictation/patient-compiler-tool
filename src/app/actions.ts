@@ -307,9 +307,175 @@ export async function createManualNote(
 }
 
 
+// ============ TASK ACTIONS ============
+
+export interface TaskWithPatient {
+    id: string;
+    task_description: string;
+    task_category: 'clinical' | 'administrative' | 'follow_up';
+    evidence_quote: string | null;
+    status: string;
+    lifecycle_state: string;
+    confidence: string;
+    snoozed_until: string | null;
+    created_at: string;
+    patient_id: string;
+    patient_name: string;
+}
+
+/**
+ * Create a manual task for a patient
+ */
+export async function createManualTask(
+    patientId: string,
+    description: string,
+    category: 'clinical' | 'administrative' | 'follow_up' = 'clinical'
+) {
+    const { error } = await supabase
+        .from('patient_task')
+        .insert({
+            canonical_patient_id: patientId,
+            task_description: description,
+            task_category: category,
+            lifecycle_state: 'clinician_entered',
+            status: 'pending'
+        });
+
+    if (error) throw new Error(error.message);
+    revalidatePath('/patient/[id]');
+    revalidatePath('/');
+}
+
+/**
+ * Mark a task as completed (hides from view)
+ */
+export async function completeTask(taskId: string) {
+    const { error } = await supabase
+        .from('patient_task')
+        .update({
+            status: 'completed',
+            completed_at: new Date().toISOString()
+        })
+        .eq('id', taskId);
+
+    if (error) throw new Error(error.message);
+    revalidatePath('/patient/[id]');
+    revalidatePath('/');
+}
+
+/**
+ * Snooze a task for N days
+ */
+export async function snoozeTask(taskId: string, days: number) {
+    const snoozeDate = new Date();
+    snoozeDate.setDate(snoozeDate.getDate() + days);
+
+    const { error } = await supabase
+        .from('patient_task')
+        .update({ snoozed_until: snoozeDate.toISOString().split('T')[0] })
+        .eq('id', taskId);
+
+    if (error) throw new Error(error.message);
+    revalidatePath('/patient/[id]');
+    revalidatePath('/');
+}
+
+/**
+ * Update a task's description or category
+ */
+export async function updateTask(taskId: string, updates: {
+    task_description?: string;
+    task_category?: string;
+}) {
+    const { error } = await supabase
+        .from('patient_task')
+        .update(updates)
+        .eq('id', taskId);
+
+    if (error) throw new Error(error.message);
+    revalidatePath('/patient/[id]');
+    revalidatePath('/');
+}
+
+/**
+ * Delete a task
+ */
+export async function deleteTask(taskId: string) {
+    const { error } = await supabase
+        .from('patient_task')
+        .delete()
+        .eq('id', taskId);
+
+    if (error) throw new Error(error.message);
+    revalidatePath('/patient/[id]');
+    revalidatePath('/');
+}
+
+/**
+ * Fetch all pending tasks across all patients
+ * Returns tasks sorted by creation date (newest first)
+ * Excludes snoozed tasks until their snooze date
+ */
+export async function getPendingTasks(): Promise<TaskWithPatient[]> {
+    const today = new Date().toISOString().split('T')[0];
+
+    const { data, error } = await supabase
+        .from('patient_task')
+        .select(`
+            id,
+            task_description,
+            task_category,
+            evidence_quote,
+            status,
+            lifecycle_state,
+            confidence,
+            snoozed_until,
+            created_at,
+            canonical_patient_id,
+            canonical_patient:canonical_patient_id (display_name)
+        `)
+        .eq('status', 'pending')
+        .or(`snoozed_until.is.null,snoozed_until.lte.${today}`)
+        .order('created_at', { ascending: false });
+
+    if (error) throw new Error(error.message);
+
+    return (data || []).map((task: any) => ({
+        id: task.id,
+        task_description: task.task_description,
+        task_category: task.task_category,
+        evidence_quote: task.evidence_quote,
+        status: task.status,
+        lifecycle_state: task.lifecycle_state,
+        confidence: task.confidence,
+        snoozed_until: task.snoozed_until,
+        created_at: task.created_at,
+        patient_id: task.canonical_patient_id,
+        patient_name: task.canonical_patient?.display_name || 'Unknown'
+    }));
+}
+
+/**
+ * Fetch pending tasks for a specific patient
+ */
+export async function getPatientTasks(patientId: string) {
+    const today = new Date().toISOString().split('T')[0];
+
+    const { data, error } = await supabase
+        .from('patient_task')
+        .select('*')
+        .eq('canonical_patient_id', patientId)
+        .eq('status', 'pending')
+        .or(`snoozed_until.is.null,snoozed_until.lte.${today}`)
+        .order('created_at', { ascending: false });
+
+    if (error) throw new Error(error.message);
+    return data || [];
+}
+
 // ============ SMART NOTE CREATION ============
 
-import { generateFromPrompt, SmartNoteModel } from '@/lib/llm';
+import { generateFromPrompt, SmartNoteModel, extractTasks } from '@/lib/llm';
 import { SMART_NOTE_PROMPTS } from '@/lib/prompts';
 
 export interface SmartNoteOptions {
@@ -330,6 +496,7 @@ export interface SmartNoteResult {
     transcriptArtifactId?: string;
     noteArtifactId?: string;
     letterArtifactId?: string;
+    tasksExtracted?: number;
     errors: string[];
 }
 
@@ -404,6 +571,7 @@ async function saveArtifact(
 /**
  * Create Smart Note artifacts from a transcript.
  * Handles partial failures - if one generation fails, others still complete.
+ * Also extracts tasks from the transcript.
  */
 export async function createSmartNote(options: SmartNoteOptions): Promise<SmartNoteResult> {
     const { patientId, patientName, date, transcript, noteType, outputs, model } = options;
@@ -430,7 +598,7 @@ export async function createSmartNote(options: SmartNoteOptions): Promise<SmartN
                     transcript,
                     patientName,
                     prompt,
-                    model,
+                    'gemini-2.5-flash-lite', // Enforced model for Notes
                     patientId,
                     'smart_note_consult'
                 );
@@ -460,7 +628,33 @@ export async function createSmartNote(options: SmartNoteOptions): Promise<SmartN
             }
         }
 
+        // 5. Extract Tasks (always runs)
+        try {
+            // Enforced model for Tasks (Groq Llama Maverick)
+            const taskResult = await extractTasks(transcript, patientName, 'groq-llama-4', patientId);
+
+            // Save each extracted task to the database
+            for (const task of taskResult.tasks) {
+                await supabase.from('patient_task').insert({
+                    canonical_patient_id: patientId,
+                    task_description: task.task_description,
+                    task_category: task.task_category,
+                    evidence_quote: task.evidence_quote,
+                    confidence: task.confidence,
+                    source_encounter_id: encounterId,
+                    source_artifact_id: result.transcriptArtifactId,
+                    lifecycle_state: 'suggested',
+                    status: 'pending'
+                });
+            }
+
+            result.tasksExtracted = taskResult.tasks.length;
+        } catch (e: any) {
+            result.errors.push(`Task extraction failed: ${e.message}`);
+        }
+
         revalidatePath('/patient/[id]');
+        revalidatePath('/');
         return result;
 
     } catch (e: any) {

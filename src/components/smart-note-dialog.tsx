@@ -44,6 +44,7 @@ interface GenerationState {
     transcript: GenerationStatus;
     note: GenerationStatus;
     letter: GenerationStatus;
+    tasks: GenerationStatus;
 }
 
 export function SmartNoteDialog({ patientId, patientName, asMobileButton = false }: SmartNoteDialogProps) {
@@ -77,7 +78,8 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
     const [generationState, setGenerationState] = useState<GenerationState>({
         transcript: 'idle',
         note: 'idle',
-        letter: 'idle'
+        letter: 'idle',
+        tasks: 'idle'
     });
 
     // Cleanup on unmount
@@ -98,7 +100,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         setGenerateLetter(false);
         setLetterType('new');
         setModel('gemini-2.5-flash');
-        setGenerationState({ transcript: 'idle', note: 'idle', letter: 'idle' });
+        setGenerationState({ transcript: 'idle', note: 'idle', letter: 'idle', tasks: 'idle' });
         setRecordingDuration(0);
         setIsRecording(false);
         setIsTranscribing(false);
@@ -195,7 +197,8 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         setGenerationState({
             transcript: 'generating',
             note: generateNote ? 'generating' : 'idle',
-            letter: generateLetter ? 'generating' : 'idle'
+            letter: generateLetter ? 'generating' : 'idle',
+            tasks: 'generating'
         });
 
         startTransition(async () => {
@@ -224,7 +227,8 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                         : 'idle',
                     letter: generateLetter
                         ? (result.letterArtifactId ? 'success' : 'error')
-                        : 'idle'
+                        : 'idle',
+                    tasks: result.tasksExtracted !== undefined ? 'success' : 'error'
                 });
 
                 if (result.errors.length > 0) {
@@ -238,7 +242,8 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                 ].filter(Boolean).length;
 
                 if (successCount > 0) {
-                    toast.success(`Created ${successCount} artifact(s) successfully`);
+                    const taskMsg = result.tasksExtracted ? ` + ${result.tasksExtracted} task(s)` : '';
+                    toast.success(`Created ${successCount} artifact(s)${taskMsg} successfully`);
                     setTimeout(() => {
                         setOpen(false);
                         resetState();
@@ -251,7 +256,8 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                 setGenerationState({
                     transcript: 'error',
                     note: generateNote ? 'error' : 'idle',
-                    letter: generateLetter ? 'error' : 'idle'
+                    letter: generateLetter ? 'error' : 'idle',
+                    tasks: 'error'
                 });
             }
         });
@@ -495,12 +501,14 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                     {/* Generation Status */}
                     {(generationState.transcript !== 'idle' ||
                         generationState.note !== 'idle' ||
-                        generationState.letter !== 'idle') && (
+                        generationState.letter !== 'idle' ||
+                        generationState.tasks !== 'idle') && (
                             <div className="border rounded-lg p-4 bg-gray-50 space-y-2">
                                 <Label className="text-sm font-medium">Generation Progress</Label>
                                 <StatusIndicator status={generationState.transcript} label="Saving transcript" />
                                 <StatusIndicator status={generationState.note} label="Generating note" />
                                 <StatusIndicator status={generationState.letter} label="Generating letter" />
+                                <StatusIndicator status={generationState.tasks} label="Extracting tasks" />
                             </div>
                         )}
                 </div>

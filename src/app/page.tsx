@@ -1,4 +1,3 @@
-
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { SyncButton } from '@/components/sync-button';
@@ -7,6 +6,7 @@ import { Users, Search } from 'lucide-react';
 import { PatientList } from '@/components/patient-list';
 import { AddPatientDialog } from '@/components/add-patient-dialog';
 import { LLMCostDisplay } from '@/components/llm-cost-display';
+import { TasksSidebar } from '@/components/tasks-sidebar';
 
 export const dynamic = 'force-dynamic';
 
@@ -100,6 +100,7 @@ export default async function Dashboard(props: DashboardProps) {
 
           {/* Mobile-only compact action buttons */}
           <div className="flex gap-2 md:hidden">
+            <TasksSidebar />
             <AddPatientDialog />
             <Link href="/search">
               <Button variant="outline" size="icon" title="Search">
@@ -116,6 +117,7 @@ export default async function Dashboard(props: DashboardProps) {
             <LLMCostDisplay />
           </div>
           <div className="flex gap-2">
+            <TasksSidebar />
             <AddPatientDialog />
             <Link href="/search">
               <Button variant="outline" size="icon" title="Search Everything">
