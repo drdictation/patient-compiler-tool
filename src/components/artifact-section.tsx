@@ -66,12 +66,42 @@ export function ArtifactSection({ encounterId, type, initialArtifact }: Artifact
     const handleCopy = async () => {
         if (contentRef.current) {
             try {
-                // Get the rendered HTML content
-                const html = contentRef.current.innerHTML;
+                // Clone the content and inject inline styles for EMR compatibility
+                const clone = contentRef.current.cloneNode(true) as HTMLElement;
+
+                // Apply inline styles to all elements for EMR compatibility
+                const baseStyle = 'font-family: Arial, sans-serif; font-size: 10pt;';
+                clone.style.cssText = baseStyle;
+
+                // Style all paragraphs
+                clone.querySelectorAll('p').forEach((p) => {
+                    (p as HTMLElement).style.cssText = `${baseStyle} margin: 6pt 0;`;
+                });
+
+                // Style all list items and lists with proper indentation
+                clone.querySelectorAll('ul, ol').forEach((list) => {
+                    (list as HTMLElement).style.cssText = `${baseStyle} margin-left: 24pt; padding-left: 0; margin-top: 6pt; margin-bottom: 6pt;`;
+                });
+
+                clone.querySelectorAll('li').forEach((li) => {
+                    (li as HTMLElement).style.cssText = `${baseStyle} margin: 3pt 0;`;
+                });
+
+                // Style headings
+                clone.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach((h) => {
+                    (h as HTMLElement).style.cssText = `${baseStyle} font-weight: bold; margin-top: 12pt; margin-bottom: 6pt;`;
+                });
+
+                // Style strong/bold
+                clone.querySelectorAll('strong, b').forEach((s) => {
+                    (s as HTMLElement).style.cssText = `${baseStyle} font-weight: bold;`;
+                });
+
+                const html = clone.innerHTML;
                 const text = contentRef.current.innerText;
 
                 // Create a ClipboardItem with both HTML and plain text
-                const blob = new Blob([html], { type: 'text/html' });
+                const blob = new Blob([`<div style="${baseStyle}">${html}</div>`], { type: 'text/html' });
                 const textBlob = new Blob([text], { type: 'text/plain' });
 
                 await navigator.clipboard.write([
