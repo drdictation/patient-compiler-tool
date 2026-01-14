@@ -1,5 +1,7 @@
 # Smart Note Feature Implementation Spec
 
+> **STATUS: ✅ FULLY IMPLEMENTED** — All acceptance criteria met.
+
 ## Project Context
 This is a Next.js 14+ application (App Router) for a gastroenterology patient management tool. The codebase uses:
 - **Supabase** for database (PostgreSQL)
@@ -32,9 +34,10 @@ Create a new component: `src/components/smart-note-dialog.tsx`
   - **Letter Type Selector** (only shown if "Generate Letter" is checked):
     - "New Letter"
     - "Review Letter"
-  - **Model Selector**: Dropdown with ONLY:
-    - "Gemini 2.5 Flash"
-    - "Gemini 3.0 Flash"
+  - **Model Selector**: Dropdown with:
+    - "Gemini 2.5 Flash" (gemini-flash)
+    - "Gemini 3.0 Flash" (gemini-3.0-flash)
+    - "Gemini 2.5 Flash-Lite" (gemini-flash-lite) — Fast transcription
   - **Submit Button**: "Generate" (with loading state)
 
 ---
@@ -133,6 +136,7 @@ For now, prompts are hardcoded constants. In the future, add a settings page whe
 2. ✅ Can paste transcript and select Note Type + Output types.
 3. ✅ Clicking "Generate" creates separate artifacts for Note and Letter (if both selected).
 4. ✅ Raw transcript is also saved as a separate artifact.
-5. ✅ Model selector only shows Gemini 2.5 Flash and Gemini 3.0 Flash.
-6. ✅ Audio recording mode scaffolded (can be incomplete but UI exists).
+5. ✅ Model selector shows Gemini 2.5 Flash, 3.0 Flash, and Flash-Lite.
+6. ✅ Audio recording mode **FULLY FUNCTIONAL** with Groq Whisper transcription.
 7. ✅ Errors in one LLM call don't block the other.
+8. ✅ Task extraction automatically runs after note generation.

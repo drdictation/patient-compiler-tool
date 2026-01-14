@@ -60,11 +60,12 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
 
     // Audio recording state (Phase 2)
     const [isRecording, setIsRecording] = useState(false);
+    const [hasRecording, setHasRecording] = useState(false);
     const [recordingDuration, setRecordingDuration] = useState(0);
     const [isTranscribing, setIsTranscribing] = useState(false);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
-    const timerRef = useRef<NodeJS.Timeout | null>(null);
+    const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // Generation options
     const [noteType, setNoteType] = useState<NoteType>('new_consult');
@@ -82,15 +83,19 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         tasks: 'idle'
     });
 
-    // Cleanup on unmount
+    // Cleanup on unmount only
     useEffect(() => {
         return () => {
-            if (timerRef.current) clearInterval(timerRef.current);
-            if (mediaRecorderRef.current && isRecording) {
+            if (timerRef.current) {
+                clearInterval(timerRef.current);
+                timerRef.current = null;
+            }
+            if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
                 mediaRecorderRef.current.stop();
+                mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
             }
         };
-    }, [isRecording]);
+    }, []); // Empty dependency array - only run cleanup on unmount
 
     const resetState = () => {
         setTranscript('');
@@ -103,6 +108,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         setGenerationState({ transcript: 'idle', note: 'idle', letter: 'idle', tasks: 'idle' });
         setRecordingDuration(0);
         setIsRecording(false);
+        setHasRecording(false);
         setIsTranscribing(false);
         audioChunksRef.current = [];
     };
@@ -111,9 +117,11 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
     const startRecording = async () => {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
             const mediaRecorder = new MediaRecorder(stream);
             mediaRecorderRef.current = mediaRecorder;
             audioChunksRef.current = [];
+            setHasRecording(false);
 
             mediaRecorder.ondataavailable = (e) => {
                 if (e.data.size > 0) {
@@ -121,16 +129,32 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                 }
             };
 
+            mediaRecorder.onstop = () => {
+                if (audioChunksRef.current.length > 0) {
+                    setHasRecording(true);
+                }
+            };
+
+            mediaRecorder.onerror = (e) => {
+                console.error('[SmartNote] MediaRecorder error:', e);
+                toast.error('Recording error occurred');
+            };
+
             mediaRecorder.start();
             setIsRecording(true);
             setRecordingDuration(0);
 
+            // Start timer
+            if (timerRef.current) {
+                clearInterval(timerRef.current);
+            }
             timerRef.current = setInterval(() => {
-                setRecordingDuration((d) => d + 1);
+                setRecordingDuration((prev) => prev + 1);
             }, 1000);
 
-        } catch (error) {
-            toast.error('Could not access microphone');
+        } catch (error: any) {
+            console.error('[SmartNote] Microphone access error:', error);
+            toast.error(`Could not access microphone: ${error.message || 'Permission denied'}`);
         }
     };
 
@@ -348,7 +372,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                         <div className="space-y-4">
                             <Label>Audio Recording</Label>
                             <div className="border rounded-lg p-4 bg-gray-50 space-y-4">
-                                {!isRecording && audioChunksRef.current.length === 0 && (
+                                {!isRecording && !hasRecording && (
                                     <div className="text-center">
                                         <Button onClick={startRecording} size="lg" className="gap-2">
                                             <Mic className="h-5 w-5" />
@@ -370,7 +394,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                                     </div>
                                 )}
 
-                                {!isRecording && audioChunksRef.current.length > 0 && (
+                                {!isRecording && hasRecording && (
                                     <div className="text-center space-y-3">
                                         <p className="text-sm text-muted-foreground">
                                             Recording complete ({formatDuration(recordingDuration)})

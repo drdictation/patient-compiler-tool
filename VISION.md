@@ -105,18 +105,20 @@ This tool is designed for a **gastroenterology practice** including:
 
 ## Implementation Roadmap
 
-### Phase 1: Foundation
-1. **Problem/Issue List** — AI-extracted, clinician-curated symptom/issue tracking
-2. **Intervention Timeline** — Log of treatments/diets/procedures with responses
-3. **Investigations Dashboard** — Tests done, pending, and recall schedule
+### Phase 1: Foundation ✅ COMPLETE
+1. ✅ **Problem/Issue List** — AI-extracted, clinician-curated symptom/issue tracking
+2. ✅ **Intervention Timeline** — Log of treatments/diets/procedures with responses
+3. ✅ **Investigations Dashboard** — Tests done, pending, and recall schedule
 
-### Phase 2: Intelligence
-4. **Encounter Summarisation** — AI-generated summaries (1-liner, 3-bullet, full)
-5. **Pre-Visit Brief** — On-demand patient summary before appointments
+### Phase 2: Intelligence ✅ COMPLETE
+4. ✅ **Smart Notes** — AI-generated notes and letters from transcripts/audio
+5. ✅ **Pre-Visit Brief** — On-demand patient summary before appointments
+6. ✅ **Task Extraction** — AI extracts clinical/administrative/follow-up tasks
 
-### Phase 3: Polish
-6. **Symptom Tracking View** — Longitudinal visual of symptom evolution
-7. **Recall/Follow-up Management** — Surface upcoming surveillance scopes, follow-up tests
+### Phase 3: Polish 🚧 IN PROGRESS
+7. ⬜ **Symptom Tracking View** — Longitudinal visual of symptom evolution
+8. ⬜ **Recall/Follow-up Management** — Surface upcoming surveillance scopes, follow-up tests
+9. ⬜ **Encounter Summarisation** — AI-generated summaries (1-liner, 3-bullet, full)
 
 ---
 
