@@ -28,6 +28,7 @@ interface Patient {
     referring_doctor?: string | null;
     next_recall_date?: string | null;
     suggested_items_count?: number;
+    pending_task_count?: number;
 }
 
 export function PatientList({ initialPatients }: { initialPatients: Patient[] }) {
@@ -186,8 +187,11 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                             checked={filterSuggested}
                             onCheckedChange={(c: boolean) => { setFilterSuggested(c); updateFilter('filter_suggested', c); }}
                         />
+                        {/* Modified label to reflect broader 'Pending' nature or keep as is? 
+                            Keeping as 'Pending' is fine, but maybe 'Attention'? 
+                            Let's keep it 'Pending' as per plan */}
                         <Label htmlFor="filter-suggested" className="text-xs md:text-sm cursor-pointer whitespace-nowrap">
-                            Pending
+                            Pending Items
                         </Label>
                     </div>
 
@@ -317,9 +321,14 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                                                 {new Date(patient.next_recall_date).toLocaleDateString()}
                                             </span>
                                         ) : '-'}
+                                        {(patient.pending_task_count || 0) > 0 && (
+                                            <Badge variant="default" className="ml-2 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] h-5 px-1.5">
+                                                {patient.pending_task_count} Tasks
+                                            </Badge>
+                                        )}
                                         {(patient.suggested_items_count || 0) > 0 && (
-                                            <Badge variant="secondary" className="ml-2 bg-amber-100 text-amber-700 hover:bg-amber-100 text-[10px] h-5 px-1.5">
-                                                {patient.suggested_items_count} New
+                                            <Badge variant="secondary" className="ml-2 bg-amber-100 text-amber-800 hover:bg-amber-200 text-[10px] h-5 px-1.5 border-amber-200">
+                                                {patient.suggested_items_count} Suggestions
                                             </Badge>
                                         )}
                                     </td>
@@ -388,9 +397,14 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                                     </Link>
                                 </div>
                                 <div className="flex items-center gap-2">
+                                    {(patient.pending_task_count || 0) > 0 && (
+                                        <Badge variant="default" className="bg-emerald-600 text-white text-[10px] h-5 px-1.5">
+                                            {patient.pending_task_count}T
+                                        </Badge>
+                                    )}
                                     {(patient.suggested_items_count || 0) > 0 && (
-                                        <Badge variant="secondary" className="bg-amber-100 text-amber-700 text-[10px] h-5 px-1.5">
-                                            {patient.suggested_items_count}
+                                        <Badge variant="secondary" className="bg-amber-100 text-amber-800 text-[10px] h-5 px-1.5 border-amber-200">
+                                            {patient.suggested_items_count}S
                                         </Badge>
                                     )}
                                     <PatientRowActions

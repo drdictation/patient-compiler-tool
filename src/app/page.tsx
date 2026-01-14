@@ -48,7 +48,7 @@ export default async function Dashboard(props: DashboardProps) {
   }
 
   if (filterSuggested) {
-    query = query.gt('suggested_items_count', 0);
+    query = query.or('suggested_items_count.gt.0,pending_task_count.gt.0');
   }
 
   // 3. Sorting
