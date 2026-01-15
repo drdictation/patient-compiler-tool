@@ -44,9 +44,28 @@ export async function POST(request: NextRequest) {
 
         if (!response.ok) {
             const errorText = await response.text();
-            console.error('Groq Whisper API error:', errorText);
+            console.error('Groq Whisper API error:', {
+                status: response.status,
+                statusText: response.statusText,
+                body: errorText
+            });
+
+            // Try to parse error message
+            let errorMessage = `Transcription failed (${response.status})`;
+            try {
+                const errorJson = JSON.parse(errorText);
+                if (errorJson.error?.message) {
+                    errorMessage = errorJson.error.message;
+                }
+            } catch {
+                // Use raw text if not JSON
+                if (errorText.length < 200) {
+                    errorMessage = errorText;
+                }
+            }
+
             return NextResponse.json(
-                { error: `Transcription failed: ${response.status}` },
+                { error: errorMessage },
                 { status: response.status }
             );
         }

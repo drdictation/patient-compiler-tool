@@ -187,15 +187,18 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                 body: formData
             });
 
+            const data = await response.json();
+
             if (!response.ok) {
-                throw new Error('Transcription failed');
+                throw new Error(data.error || `Transcription failed (${response.status})`);
             }
 
-            const data = await response.json();
             setTranscript(data.transcript);
             toast.success('Audio transcribed successfully');
-        } catch (error) {
-            toast.error('Failed to transcribe audio');
+        } catch (error: any) {
+            console.error('[SmartNote] Transcription error:', error);
+            const message = error?.message || 'Unknown error';
+            toast.error(`Failed to transcribe: ${message}`);
         } finally {
             setIsTranscribing(false);
         }
