@@ -66,6 +66,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
     const [isTranscribing, setIsTranscribing] = useState(false);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
+    const mimeTypeRef = useRef<string>('audio/webm');
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // Generation options
@@ -120,7 +121,17 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-            const mediaRecorder = new MediaRecorder(stream);
+            // Use Opus codec with low bitrate for small file sizes
+            // 32kbps is sufficient for voice and results in ~7 MB for 30 minutes
+            const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+                ? 'audio/webm;codecs=opus'
+                : 'audio/webm';
+            mimeTypeRef.current = mimeType;
+
+            const mediaRecorder = new MediaRecorder(stream, {
+                mimeType,
+                audioBitsPerSecond: 32000, // 32 kbps - very small files
+            });
             mediaRecorderRef.current = mediaRecorder;
             audioChunksRef.current = [];
             setHasRecording(false);
@@ -135,7 +146,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                 if (audioChunksRef.current.length > 0) {
                     setHasRecording(true);
                     // Calculate file size
-                    const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                    const blob = new Blob(audioChunksRef.current, { type: mimeType });
                     const sizeMB = blob.size / (1024 * 1024);
                     setAudioSizeMB(sizeMB);
                 }
@@ -184,7 +195,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
 
         setIsTranscribing(true);
         try {
-            const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+            const audioBlob = new Blob(audioChunksRef.current, { type: mimeTypeRef.current });
 
             // Check file size - Groq limit is 25 MB
             const maxSizeMB = 25;
