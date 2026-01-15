@@ -179,6 +179,14 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         setIsTranscribing(true);
         try {
             const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+
+            // Check file size - Groq limit is 25 MB
+            const maxSizeMB = 25;
+            const sizeMB = audioBlob.size / (1024 * 1024);
+            if (sizeMB > maxSizeMB) {
+                throw new Error(`Recording too large (${sizeMB.toFixed(1)} MB). Maximum is ${maxSizeMB} MB. Try a shorter recording.`);
+            }
+
             const formData = new FormData();
             formData.append('file', audioBlob, 'recording.webm');
 
@@ -187,7 +195,16 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                 body: formData
             });
 
-            const data = await response.json();
+            // Handle response - may not be JSON if server error
+            let data;
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+                data = await response.json();
+            } else {
+                // Response is not JSON (e.g., proxy error, server error)
+                const text = await response.text();
+                throw new Error(text.substring(0, 100) || `Server error (${response.status})`);
+            }
 
             if (!response.ok) {
                 throw new Error(data.error || `Transcription failed (${response.status})`);
