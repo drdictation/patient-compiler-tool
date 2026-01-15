@@ -62,6 +62,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
     const [isRecording, setIsRecording] = useState(false);
     const [hasRecording, setHasRecording] = useState(false);
     const [recordingDuration, setRecordingDuration] = useState(0);
+    const [audioSizeMB, setAudioSizeMB] = useState(0);
     const [isTranscribing, setIsTranscribing] = useState(false);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
@@ -107,6 +108,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         setModel('gemini-2.5-flash');
         setGenerationState({ transcript: 'idle', note: 'idle', letter: 'idle', tasks: 'idle' });
         setRecordingDuration(0);
+        setAudioSizeMB(0);
         setIsRecording(false);
         setHasRecording(false);
         setIsTranscribing(false);
@@ -132,6 +134,10 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
             mediaRecorder.onstop = () => {
                 if (audioChunksRef.current.length > 0) {
                     setHasRecording(true);
+                    // Calculate file size
+                    const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                    const sizeMB = blob.size / (1024 * 1024);
+                    setAudioSizeMB(sizeMB);
                 }
             };
 
@@ -417,14 +423,26 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                                 {!isRecording && hasRecording && (
                                     <div className="text-center space-y-3">
                                         <p className="text-sm text-muted-foreground">
-                                            Recording complete ({formatDuration(recordingDuration)})
+                                            Recording complete ({formatDuration(recordingDuration)}) —{' '}
+                                            <span className={audioSizeMB > 25 ? 'text-red-500 font-medium' : ''}>
+                                                {audioSizeMB.toFixed(1)} MB
+                                            </span>
                                         </p>
+                                        {audioSizeMB > 25 && (
+                                            <p className="text-xs text-red-500">
+                                                ⚠️ File is too large (max 25 MB). Try a shorter recording.
+                                            </p>
+                                        )}
                                         <div className="flex justify-center gap-2">
                                             <Button onClick={startRecording} variant="outline" className="gap-2">
                                                 <Mic className="h-4 w-4" />
                                                 Re-record
                                             </Button>
-                                            <Button onClick={transcribeAudio} disabled={isTranscribing} className="gap-2">
+                                            <Button
+                                                onClick={transcribeAudio}
+                                                disabled={isTranscribing || audioSizeMB > 25}
+                                                className="gap-2"
+                                            >
                                                 {isTranscribing && <Loader2 className="h-4 w-4 animate-spin" />}
                                                 {isTranscribing ? 'Transcribing...' : 'Transcribe'}
                                             </Button>
