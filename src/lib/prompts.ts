@@ -10,6 +10,28 @@ import { REVIEW_CONSULT_NOTE } from './prompts/review-consult-note';
 import { NEW_LETTER } from './prompts/new-letter';
 import { REVIEW_LETTER } from './prompts/review-letter';
 import { TASK_EXTRACTION_PROMPT } from './prompts/task-extraction';
+import { IBD_NEW_LETTER } from './prompts/ibd-new-letter';
+import { IBD_REVIEW_LETTER } from './prompts/ibd-review-letter';
+import { FUNCTIONAL_NEW_LETTER } from './prompts/functional-new-letter';
+import { FUNCTIONAL_REVIEW_LETTER } from './prompts/functional-review-letter';
+import { OESOPHAGEAL_NEW_LETTER } from './prompts/oesophageal-new-letter';
+import { EOE_NEW_LETTER } from './prompts/eoe-new-letter';
+
+export const PROMPTS = {
+    NEW_CONSULT_NOTE,
+    REVIEW_CONSULT_NOTE,
+    NEW_LETTER,
+    REVIEW_LETTER,
+    IBD_NEW_LETTER,
+    IBD_REVIEW_LETTER,
+    FUNCTIONAL_NEW_LETTER,
+    FUNCTIONAL_REVIEW_LETTER,
+    OESOPHAGEAL_NEW_LETTER,
+    EOE_NEW_LETTER
+};
+
+export type LetterTemplateType = 'general' | 'ibd' | 'functional' | 'oesophageal' | 'eoe';
+
 
 export const SMART_NOTE_PROMPTS = {
     /**

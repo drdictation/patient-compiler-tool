@@ -38,6 +38,7 @@ interface SmartNoteDialogProps {
 type InputMode = 'paste' | 'record';
 type NoteType = 'new_consult' | 'review_consult';
 type LetterType = 'new' | 'review';
+type TemplateType = 'general' | 'ibd' | 'functional' | 'oesophageal' | 'eoe';
 type GenerationStatus = 'idle' | 'generating' | 'success' | 'error';
 
 interface GenerationState {
@@ -75,6 +76,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
     const [generateNote, setGenerateNote] = useState(true);
     const [generateLetter, setGenerateLetter] = useState(false);
     const [letterType, setLetterType] = useState<LetterType>('new');
+    const [templateType, setTemplateType] = useState<TemplateType>('general');
     const [model, setModel] = useState<SmartNoteModel>('gemini-2.5-flash');
 
     // Generation status
@@ -106,6 +108,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         setGenerateNote(true);
         setGenerateLetter(false);
         setLetterType('new');
+        setTemplateType('general');
         setModel('gemini-2.5-flash');
         setGenerationState({ transcript: 'idle', note: 'idle', letter: 'idle', tasks: 'idle' });
         setRecordingDuration(0);
@@ -256,7 +259,8 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                     outputs: {
                         generateNote,
                         generateLetter,
-                        letterType: generateLetter ? letterType : undefined
+                        letterType: generateLetter ? letterType : undefined,
+                        templateType: generateLetter ? templateType : undefined
                     },
                     model
                 };
@@ -540,14 +544,27 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                             </div>
 
                             {generateLetter && (
-                                <div className="ml-7 mt-2">
+                                <div className="ml-7 mt-2 flex gap-2">
                                     <Select value={letterType} onValueChange={(v) => setLetterType(v as LetterType)}>
-                                        <SelectTrigger className="w-[200px]">
+                                        <SelectTrigger className="w-[140px]">
                                             <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
                                             <SelectItem value="new">New Letter</SelectItem>
                                             <SelectItem value="review">Review Letter</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+
+                                    <Select value={templateType} onValueChange={(v) => setTemplateType(v as TemplateType)}>
+                                        <SelectTrigger className="w-[200px]">
+                                            <SelectValue placeholder="Template" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="general">General (Default)</SelectItem>
+                                            <SelectItem value="ibd">IBD</SelectItem>
+                                            <SelectItem value="functional">Functional GI</SelectItem>
+                                            <SelectItem value="oesophageal">Oesophageal</SelectItem>
+                                            <SelectItem value="eoe">EoE</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </div>

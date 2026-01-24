@@ -476,7 +476,7 @@ export async function getPatientTasks(patientId: string) {
 // ============ SMART NOTE CREATION ============
 
 import { generateFromPrompt, SmartNoteModel, extractTasks } from '@/lib/llm';
-import { SMART_NOTE_PROMPTS } from '@/lib/prompts';
+import { PROMPTS } from '@/lib/prompts';
 
 export interface SmartNoteOptions {
     patientId: string;
@@ -488,6 +488,7 @@ export interface SmartNoteOptions {
         generateNote: boolean;
         generateLetter: boolean;
         letterType?: 'new' | 'review';
+        templateType?: 'general' | 'ibd' | 'functional' | 'oesophageal' | 'eoe';
     };
     model: SmartNoteModel;
 }
@@ -592,7 +593,7 @@ export async function createSmartNote(options: SmartNoteOptions): Promise<SmartN
         if (outputs.generateNote) {
             try {
                 const promptKey = noteType === 'new_consult' ? 'NEW_CONSULT_NOTE' : 'REVIEW_CONSULT_NOTE';
-                const prompt = SMART_NOTE_PROMPTS[promptKey];
+                const prompt = PROMPTS[promptKey];
 
                 const { content } = await generateFromPrompt(
                     transcript,
@@ -608,11 +609,28 @@ export async function createSmartNote(options: SmartNoteOptions): Promise<SmartN
             }
         }
 
-        // 4. Generate Letter if requested
         if (outputs.generateLetter) {
             try {
-                const promptKey = outputs.letterType === 'review' ? 'REVIEW_LETTER' : 'NEW_LETTER';
-                const prompt = SMART_NOTE_PROMPTS[promptKey];
+                let promptKey = 'NEW_LETTER';
+                const type = outputs.letterType || 'new';
+                const template = outputs.templateType || 'general';
+
+                if (template === 'general') {
+                    promptKey = type === 'review' ? 'REVIEW_LETTER' : 'NEW_LETTER';
+                } else if (template === 'ibd') {
+                    promptKey = type === 'review' ? 'IBD_REVIEW_LETTER' : 'IBD_NEW_LETTER';
+                } else if (template === 'functional') {
+                    promptKey = type === 'review' ? 'FUNCTIONAL_REVIEW_LETTER' : 'FUNCTIONAL_NEW_LETTER';
+                } else if (template === 'oesophageal') {
+                    // Use Functional Review for Oesophageal Review
+                    promptKey = type === 'review' ? 'FUNCTIONAL_REVIEW_LETTER' : 'OESOPHAGEAL_NEW_LETTER';
+                } else if (template === 'eoe') {
+                    // Use Functional Review for EoE Review
+                    promptKey = type === 'review' ? 'FUNCTIONAL_REVIEW_LETTER' : 'EOE_NEW_LETTER';
+                }
+
+                // @ts-ignore - access dynamically
+                const prompt = (PROMPTS as any)[promptKey] || PROMPTS.NEW_LETTER;
 
                 const { content } = await generateFromPrompt(
                     transcript,
