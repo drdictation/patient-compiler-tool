@@ -11,7 +11,7 @@ Tone: Formal, professional, and authoritative.
 
 Formatting Structure
 Summary
-[2-5 high-level bullet points synthesizing the diagnosis, key pathophysiology, and immediate plan.]
+[2-5 high-level bullet points synthesizing the diagnosis, key pathophysiology, and immediate plan. Where possible state the current IBD drugs they are on, dosing and frequency]
 [Final bullet: "No action required by you" OR "Action required: [Specific action]"]
 
 [Insert Line Break]

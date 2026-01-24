@@ -101,6 +101,13 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         };
     }, []); // Empty dependency array - only run cleanup on unmount
 
+    // Ensure template is valid when switching letter types
+    useEffect(() => {
+        if (letterType === 'review' && (templateType === 'eoe' || templateType === 'oesophageal')) {
+            setTemplateType('functional'); // Fallback to functional as per user request
+        }
+    }, [letterType, templateType]);
+
     const resetState = () => {
         setTranscript('');
         setNoteType('new_consult');
@@ -563,8 +570,12 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                                             <SelectItem value="general">General (Default)</SelectItem>
                                             <SelectItem value="ibd">IBD</SelectItem>
                                             <SelectItem value="functional">Functional GI</SelectItem>
-                                            <SelectItem value="oesophageal">Oesophageal</SelectItem>
-                                            <SelectItem value="eoe">EoE</SelectItem>
+                                            {letterType === 'new' && (
+                                                <>
+                                                    <SelectItem value="oesophageal">Oesophageal</SelectItem>
+                                                    <SelectItem value="eoe">EoE</SelectItem>
+                                                </>
+                                            )}
                                         </SelectContent>
                                     </Select>
                                 </div>
