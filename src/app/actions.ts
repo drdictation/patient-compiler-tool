@@ -688,3 +688,71 @@ export async function getLLMCostStats(period: 'day' | 'week' | 'month' = 'day') 
         periodLabel: period === 'day' ? 'Today' : (period === 'week' ? 'Last 7 Days' : 'Last 30 Days')
     };
 }
+
+// ============ TRANSCRIPTION ACTION ============
+
+/**
+ * Transcribe audio using Groq Whisper API via Server Action.
+ * This bypasses the Route Handler body size limit of 4.5MB.
+ */
+export async function transcribeAudioAction(formData: FormData): Promise<{ transcript: string; duration: number | null }> {
+    try {
+        const apiKey = process.env.GROQ_API_KEY;
+        if (!apiKey) {
+            throw new Error('GROQ_API_KEY not configured');
+        }
+
+        const audioFile = formData.get('file') as File | null;
+        if (!audioFile) {
+            throw new Error('No audio file provided');
+        }
+
+        // Prepare form data for Groq API
+        const groqFormData = new FormData();
+        groqFormData.append('file', audioFile);
+        groqFormData.append('model', 'whisper-large-v3');
+
+        // Call Groq Whisper API
+        const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: groqFormData
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Groq Whisper API error:', {
+                status: response.status,
+                statusText: response.statusText,
+                body: errorText
+            });
+
+            // Try to parse error message
+            let errorMessage = `Transcription failed (${response.status})`;
+            try {
+                const errorJson = JSON.parse(errorText);
+                if (errorJson.error?.message) {
+                    errorMessage = errorJson.error.message;
+                }
+            } catch {
+                if (errorText.length < 200) {
+                    errorMessage = errorText;
+                }
+            }
+            throw new Error(errorMessage);
+        }
+
+        const data = await response.json();
+
+        return {
+            transcript: data.text || '',
+            duration: data.duration || null
+        };
+
+    } catch (error: any) {
+        console.error('Transcription action error:', error);
+        throw new Error(error.message || 'Internal error during transcription');
+    }
+}

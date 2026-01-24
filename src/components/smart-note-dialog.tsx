@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Sparkles, Mic, Square, Loader2, Check, AlertCircle, FileText, Mail } from 'lucide-react';
-import { createSmartNote, SmartNoteOptions } from '@/app/actions';
+import { createSmartNote, transcribeAudioAction, SmartNoteOptions } from '@/app/actions';
 import { SmartNoteModel } from '@/lib/llm';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
@@ -207,25 +207,8 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
             const formData = new FormData();
             formData.append('file', audioBlob, 'recording.webm');
 
-            const response = await fetch('/api/transcribe', {
-                method: 'POST',
-                body: formData
-            });
-
-            // Handle response - may not be JSON if server error
-            let data;
-            const contentType = response.headers.get('content-type');
-            if (contentType && contentType.includes('application/json')) {
-                data = await response.json();
-            } else {
-                // Response is not JSON (e.g., proxy error, server error)
-                const text = await response.text();
-                throw new Error(text.substring(0, 100) || `Server error (${response.status})`);
-            }
-
-            if (!response.ok) {
-                throw new Error(data.error || `Transcription failed (${response.status})`);
-            }
+            // Use Server Action instead of API Route to bypass body size limits
+            const data = await transcribeAudioAction(formData);
 
             setTranscript(data.transcript);
             toast.success('Audio transcribed successfully');
