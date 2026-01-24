@@ -7,6 +7,7 @@ import { PatientList } from '@/components/patient-list';
 import { AddPatientDialog } from '@/components/add-patient-dialog';
 import { LLMCostDisplay } from '@/components/llm-cost-display';
 import { TasksSidebar } from '@/components/tasks-sidebar';
+import { GlobalSearch } from '@/components/global-search';
 
 export const dynamic = 'force-dynamic';
 
@@ -100,6 +101,7 @@ export default async function Dashboard(props: DashboardProps) {
 
           {/* Mobile-only compact action buttons */}
           <div className="flex gap-2 md:hidden">
+            <GlobalSearch />
             <TasksSidebar />
             <AddPatientDialog />
             <Link href="/search">
@@ -113,6 +115,7 @@ export default async function Dashboard(props: DashboardProps) {
 
         {/* Desktop: LLM Cost Widget + Actions Row */}
         <div className="hidden md:flex items-center gap-4">
+          <GlobalSearch />
           <div className="w-64 h-24">
             <LLMCostDisplay />
           </div>

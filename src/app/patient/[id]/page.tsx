@@ -17,6 +17,7 @@ import { GlobalScanButton } from '@/components/global-scan-button';
 import { PatientInfoToggle } from '@/components/patient-info-toggle';
 import { PatientMobileActions } from '@/components/patient-mobile-actions';
 import { TasksPanel } from '@/components/tasks-panel';
+import { GlobalSearch } from '@/components/global-search';
 
 export const dynamic = 'force-dynamic';
 
@@ -66,20 +67,18 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                         </span>
                     </nav>
                     <div className="sm:hidden">
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
+                            <GlobalSearch />
                             <EditablePatientTitle
                                 patientId={patient.id}
                                 initialName={patient.display_name}
                             />
-                            {patient.identity_verified && (
-                                <Badge variant="outline" className="border-green-200 text-green-700 bg-green-50">
-                                    Verified
-                                </Badge>
-                            )}
                         </div>
                     </div>
                 </div>
                 <div className="hidden sm:flex items-center gap-3">
+                    <GlobalSearch />
+                    <Separator orientation="vertical" className="h-6 mx-2" />
                     <EditablePatientTitle
                         patientId={patient.id}
                         initialName={patient.display_name}

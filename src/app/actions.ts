@@ -598,7 +598,7 @@ export async function createSmartNote(options: SmartNoteOptions): Promise<SmartN
                     transcript,
                     patientName,
                     prompt,
-                    'gemini-2.5-flash-lite', // Enforced model for Notes
+                    model, // Use user-selected model
                     patientId,
                     'smart_note_consult'
                 );
