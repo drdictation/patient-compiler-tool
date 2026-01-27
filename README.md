@@ -31,9 +31,16 @@ A clinician memory EMR that reads from Dr Dictation via Bridge API and maintains
 - **Task Actions** – Complete, snooze (7/14/30 days), or delete tasks
 - **Patient-specific Tasks** – View and manage tasks per patient
 
+### Inbox (Gmail Integration)
+- **Email Ingestion** – Forward emails or send voice notes via iOS Shortcut
+- **AI Patient Matching** – Automatically suggests which patient an email relates to
+- **Flexible Assignment** – Assign items as records, letters, tasks, or Smart Note transcripts
+- **On-the-go Capture** – Dictate thoughts via iOS Shortcut → email → inbox
+
 ### LLM Cost Tracking
 - Logs all LLM calls with token usage and cost
 - Supports Gemini (2.5 Flash, 2.5 Flash-Lite, 3.0 Flash) and Groq (Llama 4 Maverick, GPT OSS)
+
 
 ---
 
@@ -56,21 +63,28 @@ A clinician memory EMR that reads from Dr Dictation via Bridge API and maintains
    - `supabase_migration_patient_fields.sql`
    - `supabase_migration_llm_calls.sql`
    - `supabase_migration_incremental.sql`
+   - `supabase_migration_inbox.sql` (for Gmail inbox feature)
 3. Get URL/Key from Settings -> API and put in `.env.local`
 
-### 3. Setup Dr Dictation Bridge (Data Source)
+### 3. Setup Gmail Inbox (Optional)
+1. Follow the detailed guide in `GMAIL_INBOX_SETUP.md`
+2. Create Google Cloud OAuth credentials
+3. Get refresh token via OAuth Playground
+4. Add `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, and `GMAIL_REFRESH_TOKEN` to `.env.local`
+
+### 4. Setup Dr Dictation Bridge (Data Source)
 1. In your Dr Dictation codebase, implement the Bridge API endpoint
 2. Deploy to Heroku
 3. Set `BRIDGE_API_KEY` in Heroku Config Vars to match `.env.local`
 4. Set `BRIDGE_BASE_URL` to your Heroku app URL
 
-### 4. Run Locally
+### 5. Run Locally
 ```bash
 npm install
 npm run dev
 ```
 
-### 5. Sync
+### 6. Sync
 - Log in with your password
 - Click "Sync Now" on the dashboard
 - It will pull records from Heroku and populate the list

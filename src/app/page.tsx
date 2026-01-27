@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { SyncButton } from '@/components/sync-button';
 import { Button } from '@/components/ui/button';
-import { Users, Search } from 'lucide-react';
+import { Users, Search, Inbox } from 'lucide-react';
 import { PatientList } from '@/components/patient-list';
 import { AddPatientDialog } from '@/components/add-patient-dialog';
 import { LLMCostDisplay } from '@/components/llm-cost-display';
@@ -104,6 +104,11 @@ export default async function Dashboard(props: DashboardProps) {
             <GlobalSearch />
             <TasksSidebar />
             <AddPatientDialog />
+            <Link href="/inbox">
+              <Button variant="outline" size="icon" title="Inbox">
+                <Inbox className="h-4 w-4" />
+              </Button>
+            </Link>
             <Link href="/search">
               <Button variant="outline" size="icon" title="Search">
                 <Search className="h-4 w-4" />
@@ -122,6 +127,11 @@ export default async function Dashboard(props: DashboardProps) {
           <div className="flex gap-2">
             <TasksSidebar />
             <AddPatientDialog />
+            <Link href="/inbox">
+              <Button variant="outline" size="icon" title="Inbox">
+                <Inbox className="h-4 w-4" />
+              </Button>
+            </Link>
             <Link href="/search">
               <Button variant="outline" size="icon" title="Search Everything">
                 <Search className="h-4 w-4" />

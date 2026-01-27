@@ -774,3 +774,316 @@ export async function transcribeAudioAction(formData: FormData): Promise<{ trans
         throw new Error(error.message || 'Internal error during transcription');
     }
 }
+
+// ============ INBOX ACTIONS ============
+
+import { pollInbox, markAsProcessed, suggestPatientMatch } from '@/lib/gmail-inbox';
+
+export interface InboxItem {
+    id: string;
+    source: string;
+    gmail_message_id: string | null;
+    sender_email: string | null;
+    sender_name: string | null;
+    subject: string | null;
+    raw_content: string;
+    html_content: string | null;
+    has_attachments: boolean;
+    attachment_count: number;
+    ai_suggested_patient_id: string | null;
+    ai_suggested_patient_name: string | null;
+    ai_confidence: number | null;
+    assigned_patient_id: string | null;
+    assigned_as: string | null;
+    status: string;
+    received_at: string;
+    created_at: string;
+}
+
+/**
+ * Fetch all pending inbox items
+ */
+export async function getPendingInboxItems(): Promise<InboxItem[]> {
+    const { data, error } = await supabase
+        .from('inbox_item')
+        .select('*')
+        .eq('status', 'pending')
+        .order('received_at', { ascending: false });
+
+    if (error) throw new Error(error.message);
+    return data || [];
+}
+
+/**
+ * Poll Gmail and create new inbox items
+ */
+export async function pollGmailInbox(): Promise<{ newItems: number; errors: string[] }> {
+    const errors: string[] = [];
+    let newItems = 0;
+
+    try {
+        console.log('Polling Gmail with config:', {
+            hasClientId: !!process.env.GMAIL_CLIENT_ID,
+            hasClientSecret: !!process.env.GMAIL_CLIENT_SECRET,
+            hasRefreshToken: !!process.env.GMAIL_REFRESH_TOKEN,
+            clientIdPrefix: process.env.GMAIL_CLIENT_ID?.substring(0, 10)
+        });
+
+        // 1. Poll Gmail for new messages
+        const messages = await pollInbox('INBOX', 20);
+
+        if (messages.length === 0) {
+            return { newItems: 0, errors: [] };
+        }
+
+        // 2. Get all patients for AI matching
+        const { data: patients } = await supabase
+            .from('canonical_patient')
+            .select('id, display_name')
+            .order('display_name');
+
+        const patientList = patients || [];
+
+        // 3. Process each message
+        for (const message of messages) {
+            try {
+                // Check if already processed (deduplication)
+                const { data: existing } = await supabase
+                    .from('inbox_item')
+                    .select('id')
+                    .eq('gmail_message_id', message.gmailMessageId)
+                    .single();
+
+                if (existing) {
+                    // Already processed, mark as read in Gmail
+                    await markAsProcessed(message.gmailMessageId);
+                    continue;
+                }
+
+
+                // 4. AI patient suggestion
+                let aiSuggestion: { patientId?: string; patientName?: string; confidence?: number } = {};
+                if (patientList.length > 0) {
+                    try {
+                        aiSuggestion = await suggestPatientMatch(
+                            message.rawContent,
+                            message.subject,
+                            patientList
+                        );
+                    } catch (e) {
+                        console.error('AI suggestion failed:', e);
+                    }
+                }
+
+
+                // 5. Create inbox item
+                const { error: insertError } = await supabase
+                    .from('inbox_item')
+                    .insert({
+                        source: 'email',
+                        gmail_message_id: message.gmailMessageId,
+                        sender_email: message.senderEmail,
+                        sender_name: message.senderName,
+                        subject: message.subject,
+                        raw_content: message.rawContent,
+                        html_content: message.htmlContent,
+                        has_attachments: message.hasAttachments,
+                        attachment_count: message.attachmentCount,
+                        ai_suggested_patient_id: aiSuggestion.patientId,
+                        ai_suggested_patient_name: aiSuggestion.patientName,
+                        ai_confidence: aiSuggestion.confidence,
+                        received_at: message.receivedAt.toISOString(),
+                        status: 'pending',
+                    });
+
+                if (insertError) {
+                    errors.push(`Failed to save message ${message.gmailMessageId}: ${insertError.message}`);
+                    continue;
+                }
+
+                // 6. Mark as processed in Gmail
+                await markAsProcessed(message.gmailMessageId);
+                newItems++;
+
+            } catch (e: any) {
+                errors.push(`Error processing message: ${e.message}`);
+            }
+        }
+
+        revalidatePath('/inbox');
+        return { newItems, errors };
+
+    } catch (e: any) {
+        errors.push(`Gmail polling failed: ${e.message}`);
+        return { newItems, errors };
+    }
+}
+
+/**
+ * Assign inbox item to a patient
+ */
+export async function assignInboxItem(
+    itemId: string,
+    patientId: string,
+    assignAs: 'record' | 'letter' | 'task' | 'smart_note',
+    options?: { taskCategory?: string; letterType?: string; date?: string }
+): Promise<{ success: boolean; artifactId?: string; error?: string }> {
+    try {
+        // 1. Get inbox item
+        const { data: item, error: fetchError } = await supabase
+            .from('inbox_item')
+            .select('*')
+            .eq('id', itemId)
+            .single();
+
+        if (fetchError || !item) {
+            return { success: false, error: 'Inbox item not found' };
+        }
+
+        // 2. Get patient name
+        const { data: patient } = await supabase
+            .from('canonical_patient')
+            .select('display_name')
+            .eq('id', patientId)
+            .single();
+
+        const patientName = patient?.display_name || 'Unknown';
+        const date = options?.date || new Date().toISOString().split('T')[0];
+
+        let artifactId: string | undefined;
+
+        // 3. Create appropriate artifact/task based on assignAs
+        if (assignAs === 'record') {
+            // Create as source record
+            const encounterId = await ensureEncounter(patientId, date);
+            artifactId = await saveArtifact(encounterId, 'RAW_TRANSCRIPT', item.raw_content);
+
+        } else if (assignAs === 'letter') {
+            // Create as referrer letter
+            const encounterId = await ensureEncounter(patientId, date);
+            artifactId = await saveArtifact(encounterId, 'REFERRER_LETTER', item.raw_content);
+
+        } else if (assignAs === 'task') {
+            // Create as task
+            const category = (options?.taskCategory as 'clinical' | 'administrative' | 'follow_up') || 'clinical';
+            const { data: taskData, error: taskError } = await supabase
+                .from('patient_task')
+                .insert({
+                    canonical_patient_id: patientId,
+                    task_description: item.raw_content,
+                    task_category: category,
+                    lifecycle_state: 'clinician_entered',
+                    status: 'pending'
+                })
+                .select('id')
+                .single();
+
+            if (taskError) throw new Error(taskError.message);
+            artifactId = taskData.id;
+
+        } else if (assignAs === 'smart_note') {
+            // This will be handled by opening the Smart Note dialog
+            // Just mark as assigned for now
+            artifactId = undefined;
+        }
+
+        // 4. Update inbox item status
+        const { error: updateError } = await supabase
+            .from('inbox_item')
+            .update({
+                assigned_patient_id: patientId,
+                assigned_as: assignAs,
+                assigned_artifact_id: artifactId,
+                status: 'assigned',
+                processed_at: new Date().toISOString()
+            })
+            .eq('id', itemId);
+
+        if (updateError) throw new Error(updateError.message);
+
+        revalidatePath('/inbox');
+        revalidatePath('/patient/[id]');
+        revalidatePath('/');
+
+        return { success: true, artifactId };
+
+    } catch (e: any) {
+        return { success: false, error: e.message };
+    }
+}
+
+/**
+ * Discard inbox item
+ */
+export async function discardInboxItem(itemId: string): Promise<void> {
+    const { error } = await supabase
+        .from('inbox_item')
+        .update({
+            status: 'discarded',
+            processed_at: new Date().toISOString()
+        })
+        .eq('id', itemId);
+
+    if (error) throw new Error(error.message);
+    revalidatePath('/inbox');
+}
+
+/**
+ * Re-run AI patient suggestion
+ */
+export async function suggestPatientForInboxItem(itemId: string): Promise<{
+    patientId?: string;
+    patientName?: string;
+    confidence?: number;
+    error?: string;
+}> {
+    try {
+        // 1. Get inbox item
+        const { data: item } = await supabase
+            .from('inbox_item')
+            .select('raw_content, subject')
+            .eq('id', itemId)
+            .single();
+
+        if (!item) {
+            return { error: 'Inbox item not found' };
+        }
+
+        // 2. Get all patients
+        const { data: patients } = await supabase
+            .from('canonical_patient')
+            .select('id, display_name')
+            .order('display_name');
+
+        if (!patients || patients.length === 0) {
+            return { error: 'No patients available' };
+        }
+
+        // 3. Run AI suggestion
+        const suggestion = await suggestPatientMatch(
+            item.raw_content,
+            item.subject || '',
+            patients
+        );
+
+        // 4. Update inbox item
+        if (suggestion.patientId) {
+            await supabase
+                .from('inbox_item')
+                .update({
+                    ai_suggested_patient_id: suggestion.patientId,
+                    ai_suggested_patient_name: suggestion.patientName,
+                    ai_confidence: suggestion.confidence
+                })
+                .eq('id', itemId);
+
+            revalidatePath('/inbox');
+        }
+
+        return suggestion;
+
+    } catch (e: any) {
+        return { error: e.message };
+    }
+}
+
