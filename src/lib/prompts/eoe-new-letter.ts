@@ -8,9 +8,10 @@ Language & Tone Rules
 Australian English ONLY (e.g., Oesophagus, Reflux).
 Medications: Use Australian trade and generic names.
 Tone: Formal, professional, and authoritative.
+Formatting: Use **Bold** for all section headers and the Summary dot points.
 
 Formatting Structure
-Summary
+**Summary**
 [2-5 high-level bullet points synthesizing the diagnosis, key pathophysiology, and immediate plan.]
 [Final bullet: "No action required by you" OR "Action required: [Specific action]"]
 
@@ -18,22 +19,22 @@ Summary
 
 [Salutation: "I had the pleasure of conducting..."]
 
-Symptoms and history of presenting complaint
+**Symptoms and history of presenting complaint**
 [Detailed narrative. Group related symptoms. Synthesize the timeline. Mention specific triggers/relievers (dysphagia, impaction history).]
 
-Diet
+**Diet**
 [Narrative description of current intake, intolerances, and specific exclusions. Note 6-food elimination history if relevant.]
 
-Past medical history and medications
+**Past medical history and medications**
 [List or narrative.]
 
-Social history, family history
+**Social history, family history**
 [Employment, living situation, family medical history (especially atopy/EoE).]
 
-Examination
+**Examination**
 [Physical findings. If telehealth/none, state: "I did not perform a physical examination."]
 
-Impression and plan
+**Impression and plan**
 [Synthesize the doctor's reasoning. Break down the plan into sub-headers if complex.]
 [Closing: "Thank you again for referring..."]
 
