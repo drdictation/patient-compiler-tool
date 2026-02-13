@@ -65,8 +65,10 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
     const [recordingDuration, setRecordingDuration] = useState(0);
     const [audioSizeMB, setAudioSizeMB] = useState(0);
     const [isTranscribing, setIsTranscribing] = useState(false);
+    const [transcribeProgress, setTranscribeProgress] = useState<{ current: number; total: number } | null>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
+    const audioSegmentsRef = useRef<Blob[]>([]);
     const mimeTypeRef = useRef<string>('audio/webm');
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -123,7 +125,9 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         setIsRecording(false);
         setHasRecording(false);
         setIsTranscribing(false);
+        setTranscribeProgress(null);
         audioChunksRef.current = [];
+        audioSegmentsRef.current = [];
     };
 
     // Audio recording functions
@@ -144,20 +148,22 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
             });
             mediaRecorderRef.current = mediaRecorder;
             audioChunksRef.current = [];
+            audioSegmentsRef.current = [];
             setHasRecording(false);
 
             mediaRecorder.ondataavailable = (e) => {
                 if (e.data.size > 0) {
                     audioChunksRef.current.push(e.data);
+                    audioSegmentsRef.current.push(e.data);
                 }
             };
 
             mediaRecorder.onstop = () => {
-                if (audioChunksRef.current.length > 0) {
+                if (audioSegmentsRef.current.length > 0) {
                     setHasRecording(true);
                     // Calculate file size
-                    const blob = new Blob(audioChunksRef.current, { type: mimeType });
-                    const sizeMB = blob.size / (1024 * 1024);
+                    const totalBytes = audioSegmentsRef.current.reduce((sum, b) => sum + b.size, 0);
+                    const sizeMB = totalBytes / (1024 * 1024);
                     setAudioSizeMB(sizeMB);
                 }
             };
@@ -167,7 +173,9 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                 toast.error('Recording error occurred');
             };
 
-            mediaRecorder.start();
+            // Record in segments to avoid long-file transcription failures
+            const SEGMENT_MS = 5 * 60 * 1000; // 5 minutes
+            mediaRecorder.start(SEGMENT_MS);
             setIsRecording(true);
             setRecordingDuration(0);
 
@@ -198,29 +206,33 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
     };
 
     const transcribeAudio = async () => {
-        if (audioChunksRef.current.length === 0) {
+        if (audioSegmentsRef.current.length === 0) {
             toast.error('No audio recorded');
             return;
         }
 
         setIsTranscribing(true);
+        setTranscribeProgress({ current: 0, total: audioSegmentsRef.current.length });
         try {
-            const audioBlob = new Blob(audioChunksRef.current, { type: mimeTypeRef.current });
-
-            // Check file size - Groq limit is 25 MB
             const maxSizeMB = 25;
-            const sizeMB = audioBlob.size / (1024 * 1024);
-            if (sizeMB > maxSizeMB) {
-                throw new Error(`Recording too large (${sizeMB.toFixed(1)} MB). Maximum is ${maxSizeMB} MB. Try a shorter recording.`);
+            const transcripts: string[] = [];
+
+            for (let i = 0; i < audioSegmentsRef.current.length; i++) {
+                const segment = audioSegmentsRef.current[i];
+                const sizeMB = segment.size / (1024 * 1024);
+                if (sizeMB > maxSizeMB) {
+                    throw new Error(`Segment ${i + 1} is too large (${sizeMB.toFixed(1)} MB). Try a shorter recording.`);
+                }
+
+                setTranscribeProgress({ current: i + 1, total: audioSegmentsRef.current.length });
+                const formData = new FormData();
+                formData.append('file', segment, `recording-part-${i + 1}.webm`);
+
+                const data = await transcribeAudioAction(formData);
+                if (data.transcript) transcripts.push(data.transcript.trim());
             }
 
-            const formData = new FormData();
-            formData.append('file', audioBlob, 'recording.webm');
-
-            // Use Server Action instead of API Route to bypass body size limits
-            const data = await transcribeAudioAction(formData);
-
-            setTranscript(data.transcript);
+            setTranscript(transcripts.filter(Boolean).join('\n\n'));
             toast.success('Audio transcribed successfully');
         } catch (error: any) {
             console.error('[SmartNote] Transcription error:', error);
@@ -228,6 +240,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
             toast.error(`Failed to transcribe: ${message}`);
         } finally {
             setIsTranscribing(false);
+            setTranscribeProgress(null);
         }
     };
 
@@ -453,6 +466,12 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                                             </Button>
                                         </div>
                                     </div>
+                                )}
+
+                                {isTranscribing && transcribeProgress && (
+                                    <p className="text-xs text-muted-foreground text-center">
+                                        Transcribing segment {transcribeProgress.current} of {transcribeProgress.total}
+                                    </p>
                                 )}
                             </div>
 

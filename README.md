@@ -20,6 +20,7 @@ A clinician memory EMR that reads from Dr Dictation via Bridge API and maintains
 - **Audio Recording** – Browser-based recording with Groq Whisper transcription
 - **Auto-Generation** – Generate internal notes and/or referrer letters
 - **Task Extraction** – AI extracts clinical/administrative/follow-up tasks
+- **Letter Templates** – General, IBD, Functional GI, Oesophageal, EoE
 
 ### Pre-Visit Brief
 - **On-demand summary** before appointments
@@ -47,11 +48,29 @@ A clinician memory EMR that reads from Dr Dictation via Bridge API and maintains
 ## 🚀 Setup Instructions
 
 ### 1. Configure Environment
-1. Copy `.env.example` to `.env.local`
-2. Set a strong password in `APP_PASSWORD`
-3. Generate a random string for `BRIDGE_API_KEY` (e.g. `openssl rand -hex 32`)
-4. Add your Gemini API key: `GEMINI_API_KEY`
-5. Add your Groq API key: `GROQ_API_KEY`
+Create `.env.local` and set the required variables:
+
+```env
+# Auth
+APP_PASSWORD=your-strong-password
+
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+
+# Dr Dictation Bridge
+BRIDGE_API_URL=https://your-bridge-app.herokuapp.com
+BRIDGE_API_KEY=your-bridge-api-key
+
+# LLMs
+GEMINI_API_KEY=...
+GROQ_API_KEY=...
+
+# Optional: Gmail Inbox
+GMAIL_CLIENT_ID=...
+GMAIL_CLIENT_SECRET=...
+GMAIL_REFRESH_TOKEN=...
+```
 
 ### 2. Setup Supabase (Overlay Database)
 1. Create a project at [supabase.com](https://supabase.com)
@@ -76,7 +95,7 @@ A clinician memory EMR that reads from Dr Dictation via Bridge API and maintains
 1. In your Dr Dictation codebase, implement the Bridge API endpoint
 2. Deploy to Heroku
 3. Set `BRIDGE_API_KEY` in Heroku Config Vars to match `.env.local`
-4. Set `BRIDGE_BASE_URL` to your Heroku app URL
+4. Set `BRIDGE_API_URL` to your Heroku app URL
 
 ### 5. Run Locally
 ```bash
@@ -96,7 +115,7 @@ npm run dev
 - **Framework**: Next.js 14+ (App Router)
 - **Database**: Supabase (PostgreSQL)
 - **UI**: shadcn/ui + Tailwind CSS 4
-- **LLM**: Gemini API, Groq API
+- **LLM**: Gemini API (notes/letters), Groq API (tasks + transcription)
 - **Audio**: Groq Whisper API (whisper-large-v3)
 - **Toasts**: Sonner
 
@@ -108,7 +127,7 @@ npm run dev
 src/
 ├── app/
 │   ├── actions.ts         # Server actions (CRUD, LLM calls)
-│   ├── api/               # API routes (sync, patient, search, transcribe)
+│   ├── api/               # API routes (sync, patient, search)
 │   ├── login/             # Login page
 │   ├── patient/[id]/      # Patient detail page
 │   ├── search/            # Search page
@@ -120,7 +139,12 @@ src/
 │   ├── tasks-panel.tsx         # Tasks per patient
 │   ├── tasks-sidebar.tsx       # Global tasks sidebar
 │   ├── pre-visit-brief.tsx     # Pre-visit summary
-│   ├── smart-note-dialog.tsx   # Smart note creation
+│   ├── smart-note-dialog.tsx   # Smart note creation + audio transcription
+│   ├── llm-cost-display.tsx    # LLM usage cost card
+│   ├── inbox-list.tsx          # Inbox list
+│   ├── inbox-item-card.tsx     # Inbox item UI
+│   ├── assign-inbox-dialog.tsx # Assign inbox item
+│   ├── poll-inbox-button.tsx   # Gmail poll button
 │   ├── patient-list.tsx        # Dashboard patient list
 │   └── ui/                     # shadcn/ui components
 └── lib/

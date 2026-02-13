@@ -55,7 +55,7 @@ Users can assign inbox items as:
 - **Record** — Raw transcript/document for patient
 - **Letter** — Referrer letter artifact
 - **Task** — Clinical/administrative/follow-up task
-- **Smart Note** — Opens Smart Note dialog with content pre-filled
+- **Smart Note** — Marks the item as assigned for Smart Note use (manual paste today)
 
 ### 4. iOS Shortcut Integration
 - Send voice notes via email
@@ -154,6 +154,9 @@ GMAIL_REFRESH_TOKEN=...
 - Patient matching uses **Gemini 2.5 Flash-Lite** (fast, cheap)
 - Processes email subject + first 1000 chars of body
 - Returns JSON with patient ID, name, confidence
+
+### Current Limitation
+- Assigning as **Smart Note** does **not** auto-open the dialog or pre-fill the transcript yet. It only marks the item as assigned.
 
 ---
 
