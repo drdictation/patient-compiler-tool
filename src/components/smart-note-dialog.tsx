@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Sparkles, Mic, Square, Loader2, Check, AlertCircle, FileText, Mail } from 'lucide-react';
-import { createSmartNote, transcribeAudioAction, SmartNoteOptions } from '@/app/actions';
+import { createSmartNote, SmartNoteOptions } from '@/app/actions';
 import { SmartNoteModel } from '@/lib/llm';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
@@ -65,7 +65,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
     const [recordingDuration, setRecordingDuration] = useState(0);
     const [audioSizeMB, setAudioSizeMB] = useState(0);
     const [isTranscribing, setIsTranscribing] = useState(false);
-    const [transcribeProgress, setTranscribeProgress] = useState<{ current: number; total: number } | null>(null);
+
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
     const audioSegmentsRef = useRef<Blob[]>([]);
@@ -125,7 +125,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         setIsRecording(false);
         setHasRecording(false);
         setIsTranscribing(false);
-        setTranscribeProgress(null);
+
         audioChunksRef.current = [];
         audioSegmentsRef.current = [];
     };
@@ -135,8 +135,8 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-            // Use Opus codec with low bitrate for small file sizes
-            // 32kbps is sufficient for voice and results in ~7 MB for 30 minutes
+            // Use Opus codec with lower bitrate for strict Vercel 4.5MB limits
+            // 16kbps is highly compressed but fully legible for voice, allowing ~35+ mins under 4.5MB
             const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
                 ? 'audio/webm;codecs=opus'
                 : 'audio/webm';
@@ -144,7 +144,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
 
             const mediaRecorder = new MediaRecorder(stream, {
                 mimeType,
-                audioBitsPerSecond: 32000, // 32 kbps - very small files
+                audioBitsPerSecond: 16000, // 16 kbps
             });
             mediaRecorderRef.current = mediaRecorder;
             audioChunksRef.current = [];
@@ -173,9 +173,9 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                 toast.error('Recording error occurred');
             };
 
-            // Record in segments to avoid long-file transcription failures
-            const SEGMENT_MS = 5 * 60 * 1000; // 5 minutes
-            mediaRecorder.start(SEGMENT_MS);
+            // Record as a single continuous blob to ensure WebM headers remain valid.
+            // DO NOT use timeslice parameter here, as chunking breaks WebM headers on Vercel.
+            mediaRecorder.start();
             setIsRecording(true);
             setRecordingDuration(0);
 
@@ -212,35 +212,47 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         }
 
         setIsTranscribing(true);
-        setTranscribeProgress({ current: 0, total: audioSegmentsRef.current.length });
+        // Combine chunks if multiple exist, though with our current setup there should just be 1 blob
+        const finalBlob = new Blob(audioSegmentsRef.current, { type: mimeTypeRef.current });
+        const sizeMB = finalBlob.size / (1024 * 1024);
+
+        // Vercel serverless function hard limit
+        const maxSizeMB = 4.5;
+
+        if (sizeMB > maxSizeMB) {
+            toast.error(`Recording is too large (${sizeMB.toFixed(1)} MB). Vercel limit is ${maxSizeMB} MB. Please record a shorter segment.`);
+            setIsTranscribing(false);
+            return;
+        }
+
         try {
-            const maxSizeMB = 25;
-            const transcripts: string[] = [];
+            const formData = new FormData();
+            formData.append('file', finalBlob, 'recording.webm');
 
-            for (let i = 0; i < audioSegmentsRef.current.length; i++) {
-                const segment = audioSegmentsRef.current[i];
-                const sizeMB = segment.size / (1024 * 1024);
-                if (sizeMB > maxSizeMB) {
-                    throw new Error(`Segment ${i + 1} is too large (${sizeMB.toFixed(1)} MB). Try a shorter recording.`);
-                }
+            const response = await fetch('/api/transcribe', {
+                method: 'POST',
+                body: formData,
+            });
 
-                setTranscribeProgress({ current: i + 1, total: audioSegmentsRef.current.length });
-                const formData = new FormData();
-                formData.append('file', segment, `recording-part-${i + 1}.webm`);
+            const data = await response.json();
 
-                const data = await transcribeAudioAction(formData);
-                if (data.transcript) transcripts.push(data.transcript.trim());
+            if (!response.ok) {
+                throw new Error(data.error || `Server responded with ${response.status}`);
             }
 
-            setTranscript(transcripts.filter(Boolean).join('\n\n'));
-            toast.success('Audio transcribed successfully');
+            if (data.transcript) {
+                setTranscript(data.transcript.trim());
+                toast.success('Audio transcribed successfully');
+            } else {
+                throw new Error('No transcript returned from server');
+            }
+
         } catch (error: any) {
             console.error('[SmartNote] Transcription error:', error);
             const message = error?.message || 'Unknown error';
             toast.error(`Failed to transcribe: ${message}`);
         } finally {
             setIsTranscribing(false);
-            setTranscribeProgress(null);
         }
     };
 
@@ -442,13 +454,13 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                                     <div className="text-center space-y-3">
                                         <p className="text-sm text-muted-foreground">
                                             Recording complete ({formatDuration(recordingDuration)}) —{' '}
-                                            <span className={audioSizeMB > 25 ? 'text-red-500 font-medium' : ''}>
-                                                {audioSizeMB.toFixed(1)} MB
+                                            <span className={audioSizeMB > 4.5 ? 'text-red-500 font-medium' : ''}>
+                                                {audioSizeMB.toFixed(2)} MB
                                             </span>
                                         </p>
-                                        {audioSizeMB > 25 && (
+                                        {audioSizeMB > 4.5 && (
                                             <p className="text-xs text-red-500">
-                                                ⚠️ File is too large (max 25 MB). Try a shorter recording.
+                                                ⚠️ File is too large (max 4.5 MB due to Vercel limits). Try a shorter recording.
                                             </p>
                                         )}
                                         <div className="flex justify-center gap-2">
@@ -458,7 +470,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                                             </Button>
                                             <Button
                                                 onClick={transcribeAudio}
-                                                disabled={isTranscribing || audioSizeMB > 25}
+                                                disabled={isTranscribing || audioSizeMB > 4.5}
                                                 className="gap-2"
                                             >
                                                 {isTranscribing && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -468,9 +480,9 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                                     </div>
                                 )}
 
-                                {isTranscribing && transcribeProgress && (
-                                    <p className="text-xs text-muted-foreground text-center">
-                                        Transcribing segment {transcribeProgress.current} of {transcribeProgress.total}
+                                {isTranscribing && (
+                                    <p className="text-xs text-muted-foreground text-center animate-pulse">
+                                        Transcribing segment...
                                     </p>
                                 )}
                             </div>
