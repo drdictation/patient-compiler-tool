@@ -28,7 +28,21 @@ export default async function Dashboard(props: DashboardProps) {
   const filterSuggested = searchParams.filter_suggested === 'true';
 
   // Build Query
-  let query = supabase.from('patient_summary').select('*');
+  let query = supabase
+    .from('patient_summary')
+    .select(`
+      id,
+      display_name,
+      normalized_name,
+      identity_verified,
+      last_seen,
+      encounter_count,
+      record_count,
+      referring_doctor,
+      next_recall_date,
+      suggested_items_count,
+      pending_task_count
+    `);
 
   // 1. Search (Name or Referring Doctor)
   if (search) {
@@ -63,12 +77,11 @@ export default async function Dashboard(props: DashboardProps) {
     query = query.order('last_seen', { ascending: false });
   }
 
-  const { data: patients, error } = await query;
-
-  // Fetch total system count for verification
-  const { count: totalRecords } = await supabase
-    .from('source_record_cache')
-    .select('*', { count: 'exact', head: true });
+  const [{ data: patients, error }, { count: totalRecords }] = await Promise.all([
+    query,
+    // `estimated` is much cheaper than exact full-table counts on larger datasets.
+    supabase.from('source_record_cache').select('*', { count: 'estimated', head: true }),
+  ]);
 
   if (error) {
     return (

@@ -79,13 +79,13 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
     const chunkTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // Generation options
-    const [noteType, setNoteType] = useState<NoteType>('new_consult');
+    const [noteType, setNoteType] = useState<NoteType>('review_consult');
     const [encounterDate, setEncounterDate] = useState(new Date().toISOString().split('T')[0]);
     const [generateNote, setGenerateNote] = useState(true);
     const [generateLetter, setGenerateLetter] = useState(false);
-    const [letterType, setLetterType] = useState<LetterType>('new');
+    const [letterType, setLetterType] = useState<LetterType>('review');
     const [templateType, setTemplateType] = useState<TemplateType>('general');
-    const [model, setModel] = useState<SmartNoteModel>('gemini-2.5-flash');
+    const [model, setModel] = useState<SmartNoteModel>('gemini-3.0-flash');
 
     // Generation status
     const [generationState, setGenerationState] = useState<GenerationState>({
@@ -115,22 +115,15 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         };
     }, []); // Empty dependency array - only run cleanup on unmount
 
-    // Ensure template is valid when switching letter types
-    useEffect(() => {
-        if (letterType === 'review' && (templateType === 'eoe' || templateType === 'oesophageal')) {
-            setTemplateType('functional'); // Fallback to functional as per user request
-        }
-    }, [letterType, templateType]);
-
     const resetState = () => {
         setTranscript('');
-        setNoteType('new_consult');
+        setNoteType('review_consult');
         setEncounterDate(new Date().toISOString().split('T')[0]);
         setGenerateNote(true);
         setGenerateLetter(false);
-        setLetterType('new');
+        setLetterType('review');
         setTemplateType('general');
-        setModel('gemini-2.5-flash');
+        setModel('gemini-3.0-flash');
         setGenerationState({ transcript: 'idle', note: 'idle', letter: 'idle', tasks: 'idle' });
         setRecordingDuration(0);
         setAudioSizeMB(0);
@@ -475,6 +468,138 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                         </Button>
                     </div>
 
+                    {/* Quick Smart Note Controls */}
+                    <div className="rounded-lg border p-4 bg-gray-50 space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label>Consult Type</Label>
+                                <RadioGroup
+                                    value={noteType}
+                                    onValueChange={(v) => {
+                                        const next = v as NoteType;
+                                        setNoteType(next);
+                                        if (next === 'new_consult') {
+                                            setLetterType('new');
+                                            setTemplateType('general');
+                                        } else {
+                                            setLetterType('review');
+                                            if (templateType === 'eoe' || templateType === 'oesophageal') {
+                                                setTemplateType('general');
+                                            }
+                                        }
+                                    }}
+                                    className="flex gap-6"
+                                >
+                                    <div className="flex items-center space-x-2">
+                                        <RadioGroupItem value="new_consult" id="new_consult" />
+                                        <Label htmlFor="new_consult" className="font-normal cursor-pointer">
+                                            New Consult
+                                        </Label>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                        <RadioGroupItem value="review_consult" id="review_consult" />
+                                        <Label htmlFor="review_consult" className="font-normal cursor-pointer">
+                                            Review Consult
+                                        </Label>
+                                    </div>
+                                </RadioGroup>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label>Generate</Label>
+                                <div className="flex flex-wrap items-center gap-6 pt-1">
+                                    <div className="flex items-center space-x-3">
+                                        <Checkbox
+                                            id="generateNote"
+                                            checked={generateNote}
+                                            onCheckedChange={(c) => setGenerateNote(!!c)}
+                                        />
+                                        <Label htmlFor="generateNote" className="flex items-center gap-2 font-normal cursor-pointer">
+                                            <FileText className="h-4 w-4" />
+                                            Consult Note
+                                        </Label>
+                                    </div>
+                                    <div className="flex items-center space-x-3">
+                                        <Checkbox
+                                            id="generateLetter"
+                                            checked={generateLetter}
+                                            onCheckedChange={(c) => setGenerateLetter(!!c)}
+                                        />
+                                        <Label htmlFor="generateLetter" className="flex items-center gap-2 font-normal cursor-pointer">
+                                            <Mail className="h-4 w-4" />
+                                            Letter
+                                        </Label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="space-y-2">
+                                <Label>Model</Label>
+                                <Select value={model} onValueChange={(v) => setModel(v as SmartNoteModel)}>
+                                    <SelectTrigger>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="gemini-3.0-flash">Gemini 3.0 Flash</SelectItem>
+                                        <SelectItem value="gemini-2.5-flash">Gemini 2.5 Flash</SelectItem>
+                                        <SelectItem value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label>Letter Style</Label>
+                                <Select
+                                    value={letterType}
+                                    onValueChange={(v) => {
+                                        const next = v as LetterType;
+                                        setLetterType(next);
+                                        if (next === 'new') {
+                                            setTemplateType('general');
+                                        } else if (templateType === 'eoe' || templateType === 'oesophageal') {
+                                            setTemplateType('general');
+                                        }
+                                    }}
+                                    disabled={!generateLetter}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="new">New Letter</SelectItem>
+                                        <SelectItem value="review">Review Letter</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label>Template</Label>
+                                <Select
+                                    value={templateType}
+                                    onValueChange={(v) => setTemplateType(v as TemplateType)}
+                                    disabled={!generateLetter}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Template" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="general">General</SelectItem>
+                                        <SelectItem value="ibd">IBD</SelectItem>
+                                        <SelectItem value="functional">Functional GI</SelectItem>
+                                        {letterType === 'new' && (
+                                            <>
+                                                <SelectItem value="oesophageal">Oesophageal</SelectItem>
+                                                <SelectItem value="eoe">EoE</SelectItem>
+                                            </>
+                                        )}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
+                    </div>
+
                     {/* Input Section */}
                     {inputMode === 'paste' ? (
                         <div className="space-y-2">
@@ -563,118 +688,16 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                         </div>
                     )}
 
-                    {/* Configuration Section */}
-                    <div className="grid grid-cols-2 gap-6">
-                        {/* Encounter Date */}
-                        <div className="space-y-3">
-                            <Label htmlFor="encounter-date">Encounter Date</Label>
-                            <Input
-                                id="encounter-date"
-                                type="date"
-                                value={encounterDate}
-                                onChange={(e) => setEncounterDate(e.target.value)}
-                                className="w-full"
-                            />
-                        </div>
-
-                        {/* Model Selection */}
-                        <div className="space-y-3">
-                            <Label>Model</Label>
-                            <Select value={model} onValueChange={(v) => setModel(v as SmartNoteModel)}>
-                                <SelectTrigger>
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="gemini-2.5-flash">Gemini 2.5 Flash</SelectItem>
-                                    <SelectItem value="gemini-3.0-flash">Gemini 3.0 Flash</SelectItem>
-                                    <SelectItem value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-                    </div>
-
-                    {/* Note Type & Outputs */}
-                    <div className="grid grid-cols-2 gap-6">
-                        {/* Note Type */}
-                        <div className="space-y-3">
-                            <Label>Note Type</Label>
-                            <RadioGroup value={noteType} onValueChange={(v) => setNoteType(v as NoteType)}>
-                                <div className="flex items-center space-x-2">
-                                    <RadioGroupItem value="new_consult" id="new_consult" />
-                                    <Label htmlFor="new_consult" className="font-normal cursor-pointer">
-                                        New Consult
-                                    </Label>
-                                </div>
-                                <div className="flex items-center space-x-2">
-                                    <RadioGroupItem value="review_consult" id="review_consult" />
-                                    <Label htmlFor="review_consult" className="font-normal cursor-pointer">
-                                        Review Consult
-                                    </Label>
-                                </div>
-                            </RadioGroup>
-                        </div>
-                    </div>
-
-                    {/* Output Selection */}
-                    <div className="space-y-4">
-                        <Label>Generate Outputs</Label>
-
-                        <div className="space-y-3">
-                            <div className="flex items-center space-x-3">
-                                <Checkbox
-                                    id="generateNote"
-                                    checked={generateNote}
-                                    onCheckedChange={(c) => setGenerateNote(!!c)}
-                                />
-                                <Label htmlFor="generateNote" className="flex items-center gap-2 font-normal cursor-pointer">
-                                    <FileText className="h-4 w-4" />
-                                    Generate Consult Note
-                                </Label>
-                            </div>
-
-                            <div className="flex items-center space-x-3">
-                                <Checkbox
-                                    id="generateLetter"
-                                    checked={generateLetter}
-                                    onCheckedChange={(c) => setGenerateLetter(!!c)}
-                                />
-                                <Label htmlFor="generateLetter" className="flex items-center gap-2 font-normal cursor-pointer">
-                                    <Mail className="h-4 w-4" />
-                                    Generate Letter
-                                </Label>
-                            </div>
-
-                            {generateLetter && (
-                                <div className="ml-7 mt-2 flex gap-2">
-                                    <Select value={letterType} onValueChange={(v) => setLetterType(v as LetterType)}>
-                                        <SelectTrigger className="w-[140px]">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="new">New Letter</SelectItem>
-                                            <SelectItem value="review">Review Letter</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-
-                                    <Select value={templateType} onValueChange={(v) => setTemplateType(v as TemplateType)}>
-                                        <SelectTrigger className="w-[200px]">
-                                            <SelectValue placeholder="Template" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="general">General (Default)</SelectItem>
-                                            <SelectItem value="ibd">IBD</SelectItem>
-                                            <SelectItem value="functional">Functional GI</SelectItem>
-                                            {letterType === 'new' && (
-                                                <>
-                                                    <SelectItem value="oesophageal">Oesophageal</SelectItem>
-                                                    <SelectItem value="eoe">EoE</SelectItem>
-                                                </>
-                                            )}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                            )}
-                        </div>
+                    {/* Date */}
+                    <div className="space-y-2">
+                        <Label htmlFor="encounter-date">Encounter Date</Label>
+                        <Input
+                            id="encounter-date"
+                            type="date"
+                            value={encounterDate}
+                            onChange={(e) => setEncounterDate(e.target.value)}
+                            className="w-full"
+                        />
                     </div>
 
                     {/* Generation Status */}
@@ -698,7 +721,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                     </Button>
                     <Button onClick={handleGenerate} disabled={isPending || !transcript.trim()}>
                         {isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                        {isPending ? 'Generating...' : 'Generate'}
+                        {isPending ? 'Generating...' : 'Generate Smart Note'}
                     </Button>
                 </DialogFooter>
             </DialogContent>

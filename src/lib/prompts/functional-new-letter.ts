@@ -12,6 +12,7 @@ Your task is to produce an **Initial Consultation Letter** for a patient with **
 - Use Australian trade and generic medication names.
 - Formal, professional, authoritative tone.
 - Use **bold** for section headers and Summary dot points only.
+- Address the referring General Practitioner directly (e.g., 'I have advised her to notify you' or 'Thank you for referring this patient').
 
 # Output Structure
 **Summary**
@@ -25,10 +26,10 @@ I had the pleasure of conducting [an in-person/telehealth] consultation with {{P
 [Focus on functional symptom clusters: bloating, pain, bowel pattern, urgency, dyspepsia, reflux.]
 
 **Diet**
-[Dietary intake, intolerances, exclusions, FODMAP-related details.]
+[**Extremely concise, highly relevant** summary of dietary intake, intolerances, exclusions, or FODMAP-related details **strictly limited to their direct impact on GI symptoms or management.**]
 
 **Past medical history and medications**
-[Concise narrative or list.]
+[Concise narrative paragraph.]
 
 **Social history, family history**
 [Employment, living situation, family medical history.]

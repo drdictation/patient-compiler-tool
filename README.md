@@ -82,6 +82,7 @@ GMAIL_REFRESH_TOKEN=...
    - `supabase_migration_patient_fields.sql`
    - `supabase_migration_llm_calls.sql`
    - `supabase_migration_incremental.sql`
+   - `supabase_migration_performance_indexes.sql` (recommended for faster dashboard/patient loading)
    - `supabase_migration_inbox.sql` (for Gmail inbox feature)
 3. Get URL/Key from Settings -> API and put in `.env.local`
 

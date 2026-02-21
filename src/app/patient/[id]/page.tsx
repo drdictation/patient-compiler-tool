@@ -23,12 +23,14 @@ export const dynamic = 'force-dynamic';
 
 export default async function PatientPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
-    const patient = await getPatientDetails(id);
-    const timeline = await getPatientTimeline(id);
-    const issues = await getPatientIssues(id);
-    const investigations = await getPatientInvestigations(id);
-    const interventions = await getPatientInterventions(id);
-    const tasks = await getPatientTasks(id);
+    const [patient, timeline, issues, investigations, interventions, tasks] = await Promise.all([
+        getPatientDetails(id),
+        getPatientTimeline(id),
+        getPatientIssues(id),
+        getPatientInvestigations(id),
+        getPatientInterventions(id),
+        getPatientTasks(id),
+    ]);
 
     // Calculate counts for sidebar
     const activeIssuesCount = issues.filter(i =>

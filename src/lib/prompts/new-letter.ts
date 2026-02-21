@@ -26,7 +26,7 @@ I had the pleasure of conducting [an in-person/telehealth] consultation with {{P
 [Detailed narrative. Group related symptoms. Synthesize timeline and key triggers/relievers.]
 
 **Diet**
-[Dietary intake, intolerances, exclusions.]
+[Concise summary (maximum 3 sentences) of key dietary details relevant to gastroenterology, e.g., specific intolerances, recent significant changes, or impact on symptoms. Avoid exhaustive lists.]
 
 **Past medical history and medications**
 [Concise narrative or list.]
@@ -60,4 +60,10 @@ I had the pleasure of conducting an in-person consultation with [Patient].
 PATIENT NAME: {{PATIENT_NAME}}
 
 TRANSCRIPT:
-{{TRANSCRIPT}}`;
+{{TRANSCRIPT}}
+
+**Locked constraints (auto-generated)**
+- [AUTO] Apply these rules to the **Impression and plan** section.
+- [AUTO] Source feedback: I do not like dot points for past medical history or medications please make it a paragraph
+**End locked constraints**
+`;

@@ -612,7 +612,7 @@ export async function createSmartNote(options: SmartNoteOptions): Promise<SmartN
         if (outputs.generateLetter) {
             try {
                 let promptKey = 'NEW_LETTER';
-                const type = outputs.letterType || 'new';
+                const type = outputs.letterType || 'review';
                 const template = outputs.templateType || 'general';
 
                 if (template === 'general') {
@@ -1020,4 +1020,3 @@ export async function suggestPatientForInboxItem(itemId: string): Promise<{
         return { error: e.message };
     }
 }
-

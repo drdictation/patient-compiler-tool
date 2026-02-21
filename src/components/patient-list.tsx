@@ -55,7 +55,7 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
         const params = new URLSearchParams(searchParams.toString());
         if (debouncedSearch) params.set('search', debouncedSearch);
         else params.delete('search');
-        router.push(`/?${params.toString()}`);
+        router.replace(`/?${params.toString()}`, { scroll: false });
     }, [debouncedSearch, router, searchParams]); // searchParams in dep array might loop? No, default behavior is fine.
 
     // Sync Flags to URL
@@ -63,13 +63,13 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
         const params = new URLSearchParams(searchParams.toString());
         if (val) params.set(key, 'true');
         else params.delete(key);
-        router.push(`/?${params.toString()}`);
+        router.replace(`/?${params.toString()}`, { scroll: false });
     };
 
     const updateSort = (val: string) => {
         const params = new URLSearchParams(searchParams.toString());
         params.set('sort', val);
-        router.push(`/?${params.toString()}`);
+        router.replace(`/?${params.toString()}`, { scroll: false });
     };
 
     // --- Bulk Selection Logic ---

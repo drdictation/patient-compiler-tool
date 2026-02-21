@@ -46,6 +46,9 @@ export interface TimelineEncounter {
     }>;
 }
 
+type TimelineSourceRecord = TimelineEncounter['source_records'][number];
+type TimelineArtifact = TimelineEncounter['artifacts'][number];
+
 export async function getPatientDetails(id: string) {
     const { data, error } = await supabase
         .from('canonical_patient')
@@ -68,41 +71,46 @@ export async function getPatientTimeline(patientId: string) {
     if (encError) throw encError;
     if (!encounters) return [];
 
-    // 2. Fetch associated data for EACH encounter
-    // This is N+1 but acceptable for MVP with small lists. 
-    // Optimization: Could do complex joins but Supabase JS syntax is nicer this way for now.
+    const encounterIds = encounters.map((enc) => enc.id);
+    const encounterDates = encounters.map((enc) => enc.encounter_date);
 
-    const timeline: TimelineEncounter[] = [];
-
-    for (const enc of encounters) {
-        // A. Get Source Records (cached from Heroku) for this encounter date
-        // Note: We match on consult_date. 
-        // In future, we might have a direct link table if dates drift, but for now date is the key.
-        const { data: records } = await supabase
+    // 2. Fetch associated data in batch to avoid N+1 round trips.
+    const [{ data: records }, { data: artifacts }] = await Promise.all([
+        supabase
             .from('source_record_cache')
             .select('*')
             .eq('canonical_patient_id', patientId)
-            .eq('consult_date', enc.encounter_date);
-
-        // B. Get Artifacts (Notes/Letters) - Assuming we join versions too
-        const { data: artifacts } = await supabase
+            .in('consult_date', encounterDates),
+        supabase
             .from('artifact')
             .select(`
-        *,
-        versions:artifact_version(*)
-      `)
-            .eq('encounter_id', enc.id);
+                *,
+                versions:artifact_version(*)
+            `)
+            .in('encounter_id', encounterIds)
+    ]);
 
-        timeline.push({
-            id: enc.id,
-            encounter_date: enc.encounter_date,
-            notes: enc.notes,
-            source_records: records || [],
-            artifacts: (artifacts as unknown as TimelineEncounter['artifacts']) || []
-        });
-    }
+    const recordsByDate = (records || []).reduce<Record<string, TimelineSourceRecord[]>>((acc, record) => {
+        const key = record.consult_date;
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(record as TimelineSourceRecord);
+        return acc;
+    }, {});
 
-    return timeline;
+    const artifactsByEncounter = (artifacts || []).reduce<Record<string, TimelineArtifact[]>>((acc, artifact) => {
+        const key = artifact.encounter_id;
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(artifact as unknown as TimelineArtifact);
+        return acc;
+    }, {});
+
+    return encounters.map((enc) => ({
+        id: enc.id,
+        encounter_date: enc.encounter_date,
+        notes: enc.notes,
+        source_records: recordsByDate[enc.encounter_date] || [],
+        artifacts: artifactsByEncounter[enc.id] || []
+    }));
 }
 
 export interface PatientIssue {
