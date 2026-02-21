@@ -49,6 +49,8 @@ interface GenerationState {
 }
 
 export function SmartNoteDialog({ patientId, patientName, asMobileButton = false }: SmartNoteDialogProps) {
+    const MAX_TRANSCRIBE_MB = 4.5;
+
     const [open, setOpen] = useState(false);
     const [isPending, startTransition] = useTransition();
     const router = useRouter();
@@ -266,7 +268,6 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
 
         try {
             const transcripts: string[] = [];
-            const maxSizeMB = 4.5;
 
             // Important: We upload sequentially. Parallel uploads might hit serverless concurrency limits or rate limits
             for (let i = 0; i < audioSegmentsRef.current.length; i++) {
@@ -275,8 +276,8 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                 const segmentBlob = audioSegmentsRef.current[i];
                 const sizeMB = segmentBlob.size / (1024 * 1024);
 
-                if (sizeMB > maxSizeMB) {
-                    throw new Error(`Segment ${i + 1} is unexpectedly too large (${sizeMB.toFixed(1)} MB). Vercel limit is ${maxSizeMB} MB.`);
+                if (sizeMB > MAX_TRANSCRIBE_MB) {
+                    throw new Error(`Segment ${i + 1} is unexpectedly too large (${sizeMB.toFixed(1)} MB). Vercel limit is ${MAX_TRANSCRIBE_MB} MB.`);
                 }
 
                 const formData = new FormData();
@@ -516,13 +517,13 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                                     <div className="text-center space-y-3">
                                         <p className="text-sm text-muted-foreground">
                                             Recording complete ({formatDuration(recordingDuration)}) —{' '}
-                                            <span className={audioSizeMB > 25 ? 'text-red-500 font-medium' : ''}>
+                                            <span className={audioSizeMB > MAX_TRANSCRIBE_MB ? 'text-red-500 font-medium' : ''}>
                                                 {audioSizeMB.toFixed(2)} MB
                                             </span>
                                         </p>
-                                        {audioSizeMB > 25 && (
+                                        {audioSizeMB > MAX_TRANSCRIBE_MB && (
                                             <p className="text-xs text-red-500">
-                                                ⚠️ File limit reached.
+                                                ⚠️ File limit reached ({MAX_TRANSCRIBE_MB} MB max).
                                             </p>
                                         )}
                                         <div className="flex justify-center gap-2">
@@ -532,7 +533,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                                             </Button>
                                             <Button
                                                 onClick={transcribeAudio}
-                                                disabled={isTranscribing || audioSizeMB > 25}
+                                                disabled={isTranscribing || audioSizeMB > MAX_TRANSCRIBE_MB}
                                                 className="gap-2"
                                             >
                                                 {isTranscribing && <Loader2 className="h-4 w-4 animate-spin" />}
