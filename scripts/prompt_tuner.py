@@ -19,7 +19,7 @@ import requests
 
 # Optional fallback key to avoid exporting GEMINI_API_KEY every run.
 # Leave empty to require GEMINI_API_KEY from environment.
-HARDCODED_GEMINI_API_KEY = "***REMOVED***"
+HARDCODED_GEMINI_API_KEY = ""
 
 PROMPT_FILES: Dict[str, str] = {
     "new-consult-note": "src/lib/prompts/new-consult-note.ts",

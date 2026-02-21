@@ -477,7 +477,7 @@ export async function extractInterventions(opts: ExtractionOptions): Promise<Int
  * Models available for Smart Note generation.
  * Only Gemini 2.5 Flash and Gemini 3.0 Flash are supported.
  */
-export type SmartNoteModel = 'gemini-2.5-flash' | 'gemini-3.0-flash' | 'gemini-2.5-flash-lite';
+export type SmartNoteModel = 'gemini-2.5-flash' | 'gemini-3-flash-preview' | 'gemini-3.0-flash' | 'gemini-2.5-flash-lite';
 
 export interface SmartNoteGenerationResult {
     content: string;
@@ -510,7 +510,8 @@ export async function generateFromPrompt(
     // Map friendly names to API model names
     const modelMap: Record<SmartNoteModel, string> = {
         'gemini-2.5-flash': 'gemini-2.5-flash',
-        'gemini-3.0-flash': 'gemini-2.0-flash',  // Note: 3.0 Flash uses 2.0-flash endpoint
+        'gemini-3-flash-preview': 'gemini-3-flash-preview',
+        'gemini-3.0-flash': 'gemini-3-flash-preview', // Backward-compatible alias
         'gemini-2.5-flash-lite': 'gemini-2.5-flash-lite'
     };
 
@@ -560,7 +561,7 @@ export async function generateFromPrompt(
 
         let providerKey: LLMProvider = 'gemini-flash';
         if (model === 'gemini-2.5-flash-lite') providerKey = 'gemini-flash-lite';
-        if (model === 'gemini-3.0-flash') providerKey = 'gemini-3.0-flash';
+        if (model === 'gemini-3.0-flash' || model === 'gemini-3-flash-preview') providerKey = 'gemini-3.0-flash';
 
         const cost = calculateCost(providerKey, inputTokens, outputTokens);
 

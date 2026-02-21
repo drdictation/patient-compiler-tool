@@ -85,7 +85,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
     const [generateLetter, setGenerateLetter] = useState(false);
     const [letterType, setLetterType] = useState<LetterType>('review');
     const [templateType, setTemplateType] = useState<TemplateType>('general');
-    const [model, setModel] = useState<SmartNoteModel>('gemini-3.0-flash');
+    const [model, setModel] = useState<SmartNoteModel>('gemini-3-flash-preview');
 
     // Generation status
     const [generationState, setGenerationState] = useState<GenerationState>({
@@ -123,7 +123,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         setGenerateLetter(false);
         setLetterType('review');
         setTemplateType('general');
-        setModel('gemini-3.0-flash');
+        setModel('gemini-3-flash-preview');
         setGenerationState({ transcript: 'idle', note: 'idle', letter: 'idle', tasks: 'idle' });
         setRecordingDuration(0);
         setAudioSizeMB(0);
@@ -542,7 +542,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="gemini-3.0-flash">Gemini 3.0 Flash</SelectItem>
+                                        <SelectItem value="gemini-3-flash-preview">Gemini 3 Flash (Preview)</SelectItem>
                                         <SelectItem value="gemini-2.5-flash">Gemini 2.5 Flash</SelectItem>
                                         <SelectItem value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite</SelectItem>
                                     </SelectContent>
