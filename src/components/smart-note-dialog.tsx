@@ -61,16 +61,20 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
 
     // Audio recording state (Phase 2)
     const [isRecording, setIsRecording] = useState(false);
+    const isRecordingRef = useRef(false);
     const [hasRecording, setHasRecording] = useState(false);
     const [recordingDuration, setRecordingDuration] = useState(0);
     const [audioSizeMB, setAudioSizeMB] = useState(0);
     const [isTranscribing, setIsTranscribing] = useState(false);
+    const [transcribeProgress, setTranscribeProgress] = useState<{ current: number; total: number } | null>(null);
 
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const streamRef = useRef<MediaStream | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
     const audioSegmentsRef = useRef<Blob[]>([]);
     const mimeTypeRef = useRef<string>('audio/webm');
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const chunkTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // Generation options
     const [noteType, setNoteType] = useState<NoteType>('new_consult');
@@ -96,9 +100,15 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                 clearInterval(timerRef.current);
                 timerRef.current = null;
             }
+            if (chunkTimerRef.current) {
+                clearInterval(chunkTimerRef.current);
+                chunkTimerRef.current = null;
+            }
             if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
                 mediaRecorderRef.current.stop();
-                mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+            }
+            if (streamRef.current) {
+                streamRef.current.getTracks().forEach(track => track.stop());
             }
         };
     }, []); // Empty dependency array - only run cleanup on unmount
@@ -126,6 +136,8 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         setHasRecording(false);
         setIsTranscribing(false);
 
+        setTranscribeProgress(null);
+
         audioChunksRef.current = [];
         audioSegmentsRef.current = [];
     };
@@ -134,55 +146,81 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
     const startRecording = async () => {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            streamRef.current = stream;
 
             // Use Opus codec with lower bitrate for strict Vercel 4.5MB limits
-            // 16kbps is highly compressed but fully legible for voice, allowing ~35+ mins under 4.5MB
             const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
                 ? 'audio/webm;codecs=opus'
                 : 'audio/webm';
             mimeTypeRef.current = mimeType;
 
-            const mediaRecorder = new MediaRecorder(stream, {
-                mimeType,
-                audioBitsPerSecond: 16000, // 16 kbps
-            });
-            mediaRecorderRef.current = mediaRecorder;
-            audioChunksRef.current = [];
             audioSegmentsRef.current = [];
             setHasRecording(false);
+            setAudioSizeMB(0);
 
-            mediaRecorder.ondataavailable = (e) => {
-                if (e.data.size > 0) {
-                    audioChunksRef.current.push(e.data);
-                    audioSegmentsRef.current.push(e.data);
-                }
+            const createRecorder = () => {
+                const mediaRecorder = new MediaRecorder(stream, {
+                    mimeType,
+                    audioBitsPerSecond: 16000, // 16 kbps
+                });
+
+                audioChunksRef.current = [];
+
+                mediaRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) {
+                        audioChunksRef.current.push(e.data);
+                    }
+                };
+
+                mediaRecorder.onstop = () => {
+                    if (audioChunksRef.current.length > 0) {
+                        const blob = new Blob(audioChunksRef.current, { type: mimeType });
+                        audioSegmentsRef.current.push(blob);
+
+                        // Calculate total file size across all segments
+                        const totalBytes = audioSegmentsRef.current.reduce((sum, b) => sum + b.size, 0);
+                        const sizeMB = totalBytes / (1024 * 1024);
+                        setAudioSizeMB(sizeMB);
+
+                        setHasRecording(true);
+                    }
+                };
+
+                mediaRecorder.onerror = (e) => {
+                    console.error('[SmartNote] MediaRecorder error:', e);
+                };
+
+                return mediaRecorder;
             };
 
-            mediaRecorder.onstop = () => {
-                if (audioSegmentsRef.current.length > 0) {
-                    setHasRecording(true);
-                    // Calculate file size
-                    const totalBytes = audioSegmentsRef.current.reduce((sum, b) => sum + b.size, 0);
-                    const sizeMB = totalBytes / (1024 * 1024);
-                    setAudioSizeMB(sizeMB);
-                }
-            };
+            // Start first recorder
+            mediaRecorderRef.current = createRecorder();
+            mediaRecorderRef.current.start();
 
-            mediaRecorder.onerror = (e) => {
-                console.error('[SmartNote] MediaRecorder error:', e);
-                toast.error('Recording error occurred');
-            };
-
-            // Record as a single continuous blob to ensure WebM headers remain valid.
-            // DO NOT use timeslice parameter here, as chunking breaks WebM headers on Vercel.
-            mediaRecorder.start();
             setIsRecording(true);
+            isRecordingRef.current = true;
             setRecordingDuration(0);
 
-            // Start timer
-            if (timerRef.current) {
-                clearInterval(timerRef.current);
-            }
+            // Chunking interval: Stop current recorder and start a new one every 4 minutes (well under 4.5MB limit)
+            const CHUNK_MS = 4 * 60 * 1000;
+            if (chunkTimerRef.current) clearInterval(chunkTimerRef.current);
+
+            chunkTimerRef.current = setInterval(() => {
+                if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+                    mediaRecorderRef.current.stop(); // This fires onstop, pushing the blob to segments array
+
+                    // Immediately start a new one
+                    setTimeout(() => {
+                        if (isRecordingRef.current) {
+                            mediaRecorderRef.current = createRecorder();
+                            mediaRecorderRef.current.start();
+                        }
+                    }, 100);
+                }
+            }, CHUNK_MS);
+
+            // Start visual timer
+            if (timerRef.current) clearInterval(timerRef.current);
             timerRef.current = setInterval(() => {
                 setRecordingDuration((prev) => prev + 1);
             }, 1000);
@@ -194,14 +232,26 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
     };
 
     const stopRecording = () => {
-        if (mediaRecorderRef.current && isRecording) {
+        setIsRecording(false);
+        isRecordingRef.current = false;
+
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
             mediaRecorderRef.current.stop();
-            mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
-            setIsRecording(false);
-            if (timerRef.current) {
-                clearInterval(timerRef.current);
-                timerRef.current = null;
-            }
+        }
+
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach(track => track.stop());
+            streamRef.current = null;
+        }
+
+        if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+        }
+
+        if (chunkTimerRef.current) {
+            clearInterval(chunkTimerRef.current);
+            chunkTimerRef.current = null;
         }
     };
 
@@ -212,39 +262,50 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         }
 
         setIsTranscribing(true);
-        // Combine chunks if multiple exist, though with our current setup there should just be 1 blob
-        const finalBlob = new Blob(audioSegmentsRef.current, { type: mimeTypeRef.current });
-        const sizeMB = finalBlob.size / (1024 * 1024);
-
-        // Vercel serverless function hard limit
-        const maxSizeMB = 4.5;
-
-        if (sizeMB > maxSizeMB) {
-            toast.error(`Recording is too large (${sizeMB.toFixed(1)} MB). Vercel limit is ${maxSizeMB} MB. Please record a shorter segment.`);
-            setIsTranscribing(false);
-            return;
-        }
+        setTranscribeProgress({ current: 0, total: audioSegmentsRef.current.length });
 
         try {
-            const formData = new FormData();
-            formData.append('file', finalBlob, 'recording.webm');
+            const transcripts: string[] = [];
+            const maxSizeMB = 4.5;
 
-            const response = await fetch('/api/transcribe', {
-                method: 'POST',
-                body: formData,
-            });
+            // Important: We upload sequentially. Parallel uploads might hit serverless concurrency limits or rate limits
+            for (let i = 0; i < audioSegmentsRef.current.length; i++) {
+                setTranscribeProgress({ current: i + 1, total: audioSegmentsRef.current.length });
 
-            const data = await response.json();
+                const segmentBlob = audioSegmentsRef.current[i];
+                const sizeMB = segmentBlob.size / (1024 * 1024);
 
-            if (!response.ok) {
-                throw new Error(data.error || `Server responded with ${response.status}`);
+                if (sizeMB > maxSizeMB) {
+                    throw new Error(`Segment ${i + 1} is unexpectedly too large (${sizeMB.toFixed(1)} MB). Vercel limit is ${maxSizeMB} MB.`);
+                }
+
+                const formData = new FormData();
+                formData.append('file', segmentBlob, `recording-part-${i + 1}.webm`);
+
+                const response = await fetch('/api/transcribe', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || `Server responded with ${response.status}`);
+                }
+
+                if (data.transcript) {
+                    transcripts.push(data.transcript.trim());
+                } else {
+                    throw new Error('No transcript returned from server for segment');
+                }
             }
 
-            if (data.transcript) {
-                setTranscript(data.transcript.trim());
+            if (transcripts.length > 0) {
+                setTranscript((prev) => {
+                    const existing = prev ? prev.trim() + '\n\n' : '';
+                    return existing + transcripts.filter(Boolean).join('\n\n');
+                });
                 toast.success('Audio transcribed successfully');
-            } else {
-                throw new Error('No transcript returned from server');
             }
 
         } catch (error: any) {
@@ -253,6 +314,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
             toast.error(`Failed to transcribe: ${message}`);
         } finally {
             setIsTranscribing(false);
+            setTranscribeProgress(null);
         }
     };
 
@@ -454,13 +516,13 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                                     <div className="text-center space-y-3">
                                         <p className="text-sm text-muted-foreground">
                                             Recording complete ({formatDuration(recordingDuration)}) —{' '}
-                                            <span className={audioSizeMB > 4.5 ? 'text-red-500 font-medium' : ''}>
+                                            <span className={audioSizeMB > 25 ? 'text-red-500 font-medium' : ''}>
                                                 {audioSizeMB.toFixed(2)} MB
                                             </span>
                                         </p>
-                                        {audioSizeMB > 4.5 && (
+                                        {audioSizeMB > 25 && (
                                             <p className="text-xs text-red-500">
-                                                ⚠️ File is too large (max 4.5 MB due to Vercel limits). Try a shorter recording.
+                                                ⚠️ File limit reached.
                                             </p>
                                         )}
                                         <div className="flex justify-center gap-2">
@@ -470,7 +532,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                                             </Button>
                                             <Button
                                                 onClick={transcribeAudio}
-                                                disabled={isTranscribing || audioSizeMB > 4.5}
+                                                disabled={isTranscribing || audioSizeMB > 25}
                                                 className="gap-2"
                                             >
                                                 {isTranscribing && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -480,9 +542,9 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                                     </div>
                                 )}
 
-                                {isTranscribing && (
+                                {isTranscribing && transcribeProgress && (
                                     <p className="text-xs text-muted-foreground text-center animate-pulse">
-                                        Transcribing segment...
+                                        Transcribing segment {transcribeProgress.current} of {transcribeProgress.total}...
                                     </p>
                                 )}
                             </div>

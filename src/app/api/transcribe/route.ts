@@ -1,9 +1,14 @@
 import { NextResponse } from 'next/server';
+import { isAuthenticated } from '@/lib/auth';
 
 export const maxDuration = 60; // 60 seconds maximum (Vercel hobby plan max is 60s, pro is 300s)
 
 export async function POST(request: Request) {
     try {
+        if (!(await isAuthenticated())) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
         const apiKey = process.env.GROQ_API_KEY;
         if (!apiKey) {
             return NextResponse.json(

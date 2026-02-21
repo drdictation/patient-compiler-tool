@@ -11,6 +11,7 @@ export function middleware(request: NextRequest) {
         pathname.startsWith('/_next') ||
         pathname.startsWith('/static') ||
         pathname.startsWith('/api/auth') || // Allow login API
+        pathname.startsWith('/api/transcribe') || // Allow transcribe API (auth checked inside or allowed open for authenticated users locally)
         pathname === '/login' ||
         pathname === '/favicon.ico'
     ) {
