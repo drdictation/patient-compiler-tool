@@ -150,71 +150,103 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
             mimeTypeRef.current = mimeType;
 
             audioSegmentsRef.current = [];
+            audioChunksRef.current = [];
             setHasRecording(false);
             setAudioSizeMB(0);
 
-            const createRecorder = () => {
-                const mediaRecorder = new MediaRecorder(stream, {
-                    mimeType,
-                    audioBitsPerSecond: 16000, // 16 kbps
-                });
+            // Track accumulated size for the current segment
+            let currentSegmentBytes = 0;
+            // 3.5MB threshold — leaves plenty of headroom below Vercel's 4.5MB hard limit
+            const SEGMENT_BYTE_LIMIT = 3.5 * 1024 * 1024;
+            // Flag to prevent re-entrant segment rotation
+            let isRotating = false;
 
+            const finalizeCurrentSegment = () => {
+                if (audioChunksRef.current.length > 0) {
+                    const blob = new Blob(audioChunksRef.current, { type: mimeType });
+                    audioSegmentsRef.current.push(blob);
+                    console.log(`[SmartNote] Segment ${audioSegmentsRef.current.length} finalized: ${(blob.size / (1024 * 1024)).toFixed(2)} MB`);
+
+                    // Update total size display
+                    const totalBytes = audioSegmentsRef.current.reduce((sum, b) => sum + b.size, 0);
+                    setAudioSizeMB(totalBytes / (1024 * 1024));
+                    setHasRecording(true);
+                }
                 audioChunksRef.current = [];
-
-                mediaRecorder.ondataavailable = (e) => {
-                    if (e.data.size > 0) {
-                        audioChunksRef.current.push(e.data);
-                    }
-                };
-
-                mediaRecorder.onstop = () => {
-                    if (audioChunksRef.current.length > 0) {
-                        const blob = new Blob(audioChunksRef.current, { type: mimeType });
-                        audioSegmentsRef.current.push(blob);
-
-                        // Calculate total file size across all segments
-                        const totalBytes = audioSegmentsRef.current.reduce((sum, b) => sum + b.size, 0);
-                        const sizeMB = totalBytes / (1024 * 1024);
-                        setAudioSizeMB(sizeMB);
-
-                        setHasRecording(true);
-                    }
-                };
-
-                mediaRecorder.onerror = (e) => {
-                    console.error('[SmartNote] MediaRecorder error:', e);
-                };
-
-                return mediaRecorder;
+                currentSegmentBytes = 0;
             };
 
-            // Start first recorder
-            mediaRecorderRef.current = createRecorder();
-            mediaRecorderRef.current.start();
+            const rotateRecorder = () => {
+                if (isRotating || !isRecordingRef.current) return;
+                isRotating = true;
+
+                // Finalize current segment from existing chunks
+                finalizeCurrentSegment();
+
+                // Create and start a fresh recorder on the same stream
+                if (streamRef.current && isRecordingRef.current) {
+                    const newRecorder = new MediaRecorder(streamRef.current, {
+                        mimeType,
+                        audioBitsPerSecond: 16000,
+                    });
+
+                    newRecorder.ondataavailable = handleDataAvailable;
+                    newRecorder.onstop = handleStop;
+                    newRecorder.onerror = (e) => console.error('[SmartNote] MediaRecorder error:', e);
+
+                    mediaRecorderRef.current = newRecorder;
+                    // Use 1-second timeslice so ondataavailable fires frequently even when tab is backgrounded
+                    newRecorder.start(1000);
+                }
+                isRotating = false;
+            };
+
+            const handleDataAvailable = (e: BlobEvent) => {
+                if (e.data.size > 0) {
+                    audioChunksRef.current.push(e.data);
+                    currentSegmentBytes += e.data.size;
+
+                    // If we've accumulated enough data, rotate to a new segment
+                    if (currentSegmentBytes >= SEGMENT_BYTE_LIMIT && !isRotating) {
+                        // requestData() already fired via timeslice, so we just need to stop and restart
+                        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+                            mediaRecorderRef.current.stop();
+                            // onstop will NOT call finalizeCurrentSegment again — rotateRecorder handles it
+                        }
+                    }
+                }
+            };
+
+            const handleStop = () => {
+                // Only finalize here if this is the FINAL stop (user clicked stop), not a rotation
+                // Rotation stops are handled by rotateRecorder which calls finalizeCurrentSegment first
+                if (!isRecordingRef.current) {
+                    finalizeCurrentSegment();
+                } else if (!isRotating) {
+                    // Mid-recording stop triggered by size limit — rotate to new recorder
+                    rotateRecorder();
+                }
+            };
+
+            const mediaRecorder = new MediaRecorder(stream, {
+                mimeType,
+                audioBitsPerSecond: 16000, // 16 kbps
+            });
+
+            mediaRecorder.ondataavailable = handleDataAvailable;
+            mediaRecorder.onstop = handleStop;
+            mediaRecorder.onerror = (e) => console.error('[SmartNote] MediaRecorder error:', e);
+
+            mediaRecorderRef.current = mediaRecorder;
+            // Use 1-second timeslice: ondataavailable fires every ~1s, even when tab is backgrounded
+            // This is critical — without timeslice, ondataavailable only fires on stop()
+            mediaRecorder.start(1000);
 
             setIsRecording(true);
             isRecordingRef.current = true;
             setRecordingDuration(0);
 
-            // Chunking interval: Stop current recorder and start a new one every 4 minutes (well under 4.5MB limit)
-            const CHUNK_MS = 4 * 60 * 1000;
-            if (chunkTimerRef.current) clearInterval(chunkTimerRef.current);
-
-            chunkTimerRef.current = setInterval(() => {
-                if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-                    mediaRecorderRef.current.stop(); // This fires onstop, pushing the blob to segments array
-
-                    // Immediately start a new one
-                    setTimeout(() => {
-                        if (isRecordingRef.current) {
-                            mediaRecorderRef.current = createRecorder();
-                            mediaRecorderRef.current.start();
-                        }
-                    }, 100);
-                }
-            }, CHUNK_MS);
-
-            // Start visual timer
+            // Visual timer only — chunking is handled by size tracking in ondataavailable
             if (timerRef.current) clearInterval(timerRef.current);
             timerRef.current = setInterval(() => {
                 setRecordingDuration((prev) => prev + 1);
