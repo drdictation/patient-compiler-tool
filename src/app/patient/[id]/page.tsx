@@ -3,7 +3,7 @@ import { getPatientDetails, getPatientTimeline, getPatientIssues, getPatientInve
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, Calendar, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Calendar, ChevronRight, UserPlus } from 'lucide-react';
 import { TimelineEntry } from '@/components/timeline-entry';
 import { EditablePatientTitle } from '@/components/editable-patient-title';
 import { IssuesPanel } from '@/components/issues-panel';
@@ -18,6 +18,7 @@ import { PatientInfoToggle } from '@/components/patient-info-toggle';
 import { PatientMobileActions } from '@/components/patient-mobile-actions';
 import { TasksPanel } from '@/components/tasks-panel';
 import { GlobalSearch } from '@/components/global-search';
+import { AddPatientDialog } from '@/components/add-patient-dialog';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,36 +52,34 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
     return (
         <div className="w-full min-h-screen flex flex-col bg-gray-50/50">
             {/* Sticky Header */}
-            <div className="bg-white border-b px-6 py-4 flex items-center justify-between sticky top-0 z-20 shadow-sm print:hidden">
-                <div className="flex items-center gap-4">
-                    <Link href="/">
-                        <Button variant="ghost" size="icon" className="-ml-2">
-                            <ArrowLeft className="h-5 w-5" />
-                        </Button>
+            <div className="bg-white border-b px-4 py-3 flex items-center gap-3 sticky top-0 z-20 shadow-sm print:hidden">
+                {/* Back button */}
+                <Link href="/">
+                    <Button variant="ghost" size="icon" className="-ml-1 flex-shrink-0">
+                        <ArrowLeft className="h-5 w-5" />
+                    </Button>
+                </Link>
+
+                {/* Breadcrumbs */}
+                <nav className="hidden sm:flex items-center gap-1 text-sm text-muted-foreground mr-2">
+                    <Link href="/" className="hover:text-foreground transition-colors">
+                        Dashboard
                     </Link>
-                    {/* Breadcrumbs */}
-                    <nav className="hidden sm:flex items-center gap-1 text-sm text-muted-foreground">
-                        <Link href="/" className="hover:text-foreground transition-colors">
-                            Dashboard
-                        </Link>
-                        <ChevronRight className="h-3 w-3" />
-                        <span className="text-foreground font-medium truncate max-w-[200px]">
-                            {patient.display_name}
-                        </span>
-                    </nav>
-                    <div className="sm:hidden">
-                        <div className="flex items-center gap-2">
-                            <GlobalSearch />
-                            <EditablePatientTitle
-                                patientId={patient.id}
-                                initialName={patient.display_name}
-                            />
-                        </div>
-                    </div>
-                </div>
-                <div className="hidden sm:flex items-center gap-3">
-                    <GlobalSearch />
-                    <Separator orientation="vertical" className="h-6 mx-2" />
+                    <ChevronRight className="h-3 w-3" />
+                    <span className="text-foreground font-medium truncate max-w-[200px]">
+                        {patient.display_name}
+                    </span>
+                </nav>
+
+                {/* Action buttons — left-aligned, visible on sm+ */}
+                <div className="hidden sm:flex items-center gap-2">
+                    <AddNoteDialog patientId={patient.id} />
+                    <SmartNoteDialog patientId={patient.id} patientName={patient.display_name} />
+                    <Separator orientation="vertical" className="h-6" />
+                    <AddPatientDialog />
+                    <Separator orientation="vertical" className="h-6" />
+                    <GlobalScanButton patientId={patient.id} />
+                    <PatientInfoToggle patient={patient} />
                     <EditablePatientTitle
                         patientId={patient.id}
                         initialName={patient.display_name}
@@ -90,10 +89,20 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                             Verified
                         </Badge>
                     )}
-                    <PatientInfoToggle patient={patient} />
-                    <GlobalScanButton patientId={patient.id} />
-                    <SmartNoteDialog patientId={patient.id} patientName={patient.display_name} />
-                    <AddNoteDialog patientId={patient.id} />
+                </div>
+
+                {/* Mobile: search + name only */}
+                <div className="sm:hidden flex items-center gap-2">
+                    <GlobalSearch />
+                    <EditablePatientTitle
+                        patientId={patient.id}
+                        initialName={patient.display_name}
+                    />
+                </div>
+
+                {/* Global search — pushed to right on desktop */}
+                <div className="hidden sm:flex ml-auto">
+                    <GlobalSearch />
                 </div>
             </div>
 
@@ -110,6 +119,30 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                 {/* Main Content Area - Add bottom padding on mobile for action bar */}
                 <main className="flex-1 overflow-y-auto print:overflow-visible pb-20 md:pb-0">
                     <div className="max-w-5xl mx-auto px-4 lg:px-8 py-8 space-y-8 print:max-w-full print:px-0">
+
+                        {/* TIMELINE — shown first for quick access */}
+                        <section id="timeline" className="space-y-2">
+                            <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2 border-b pb-2 mb-4">
+                                <Calendar className="h-5 w-5 text-indigo-600" />
+                                Encounter Timeline
+                            </h2>
+
+                            {timeline.length === 0 && (
+                                <div className="text-center py-12 text-muted-foreground border-2 border-dashed rounded-lg bg-white">
+                                    No encounters found for this patient.
+                                </div>
+                            )}
+
+                            <div className="pl-1">
+                                {timeline.map((encounter, index) => (
+                                    <TimelineEntry
+                                        key={encounter.id}
+                                        encounter={encounter}
+                                        isLast={index === timeline.length - 1}
+                                    />
+                                ))}
+                            </div>
+                        </section>
 
                         {/* PRE-VISIT BRIEF */}
                         <section id="brief">
@@ -140,30 +173,6 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                         {/* INTERVENTIONS PANEL */}
                         <section id="interventions">
                             <InterventionsPanel patientId={id} interventions={interventions} />
-                        </section>
-
-                        {/* TIMELINE */}
-                        <section id="timeline" className="space-y-2">
-                            <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2 border-b pb-2 mb-4">
-                                <Calendar className="h-5 w-5 text-indigo-600" />
-                                Encounter Timeline
-                            </h2>
-
-                            {timeline.length === 0 && (
-                                <div className="text-center py-12 text-muted-foreground border-2 border-dashed rounded-lg bg-white">
-                                    No encounters found for this patient.
-                                </div>
-                            )}
-
-                            <div className="pl-1">
-                                {timeline.map((encounter, index) => (
-                                    <TimelineEntry
-                                        key={encounter.id}
-                                        encounter={encounter}
-                                        isLast={index === timeline.length - 1}
-                                    />
-                                ))}
-                            </div>
                         </section>
                     </div>
                 </main>

@@ -18,11 +18,12 @@ interface PatientSidebarProps {
 }
 
 const navItems = [
+    { id: 'timeline', label: 'Timeline', icon: Calendar },
     { id: 'brief', label: 'Pre-Visit Brief', icon: FileText },
+    { id: 'tasks', label: 'Tasks', icon: FileText },
     { id: 'issues', label: 'Issues', icon: AlertCircle },
     { id: 'investigations', label: 'Investigations', icon: Microscope },
     { id: 'interventions', label: 'Interventions', icon: Pill },
-    { id: 'timeline', label: 'Timeline', icon: Calendar },
 ];
 
 export function PatientSidebar({
