@@ -577,7 +577,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                                     <SelectContent>
                                         <SelectItem value="gemini-3-flash-preview">Gemini 3 Flash (Preview)</SelectItem>
                                         <SelectItem value="gemini-2.5-flash">Gemini 2.5 Flash</SelectItem>
-                                        <SelectItem value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite</SelectItem>
+                                        <SelectItem value="gemini-3.1-flash-lite-preview">Gemini 3.1 Flash-Lite</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>

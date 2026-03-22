@@ -200,7 +200,7 @@ For better AI matching, include the patient name:
 ### AI patient matching not working
 - Ensure you have patients in your database
 - Include the patient name in the email subject or body
-- The AI uses Gemini Flash-Lite for matching
+- The AI uses Gemini 3.1 Flash-Lite for matching
 
 ---
 

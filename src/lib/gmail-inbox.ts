@@ -274,7 +274,7 @@ Respond ONLY with valid JSON in this exact format:
 }`;
 
     try {
-        const response = await generateFromPrompt(content, 'AI', prompt, 'gemini-2.5-flash-lite', undefined, 'patient_matching');
+        const response = await generateFromPrompt(content, 'AI', prompt, 'gemini-3.1-flash-lite-preview', undefined, 'patient_matching');
         const parsed = JSON.parse(response.content);
 
         return {

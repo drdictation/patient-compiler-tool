@@ -40,7 +40,7 @@ A clinician memory EMR that reads from Dr Dictation via Bridge API and maintains
 
 ### LLM Cost Tracking
 - Logs all LLM calls with token usage and cost
-- Supports Gemini (2.5 Flash, 2.5 Flash-Lite, 3.0 Flash) and Groq (Llama 4 Maverick, GPT OSS)
+- Supports Gemini (2.5 Flash, 3.1 Flash-Lite, 3.0 Flash) and Groq (Llama 4 Maverick, GPT OSS)
 
 
 ---

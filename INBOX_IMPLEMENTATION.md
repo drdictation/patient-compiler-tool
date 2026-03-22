@@ -45,7 +45,7 @@ A complete Gmail-based inbox system that allows you to capture thoughts on-the-g
 - Marks messages as read after processing
 
 ### 2. AI Patient Matching
-- Uses Gemini Flash-Lite to analyze email content
+- Uses Gemini 3.1 Flash-Lite to analyze email content
 - Suggests which patient the email relates to
 - Shows confidence score (0-100%)
 - Can be re-run manually if needed
@@ -151,7 +151,7 @@ GMAIL_REFRESH_TOKEN=...
 - Consider using dedicated Gmail account
 
 ### AI Model Usage
-- Patient matching uses **Gemini 2.5 Flash-Lite** (fast, cheap)
+- Patient matching uses **Gemini 3.1 Flash-Lite** (fast, cheap)
 - Processes email subject + first 1000 chars of body
 - Returns JSON with patient ID, name, confidence
 

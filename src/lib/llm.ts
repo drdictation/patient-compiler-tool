@@ -28,7 +28,7 @@ interface ExtractionOptions {
 
 const PRICING = {
     'gemini-flash': { input: 0.15, output: 1.25 }, // Gemini 2.5 Flash
-    'gemini-flash-lite': { input: 0.05, output: 0.20 }, // Gemini 2.5 Flash-Lite
+    'gemini-flash-lite': { input: 0.05, output: 0.20 }, // Gemini 3.1 Flash-Lite
     'gemini-3.0-flash': { input: 0.25, output: 1.50 }, // Gemini 3.0 Flash (New)
     'groq-gpt-oss': { input: 0.15, output: 0.60 }, // GPT OSS 120B
     'groq-llama-4': { input: 0.20, output: 0.60 }, // Llama 4 Maverick
@@ -122,7 +122,7 @@ async function callGemini(
     if (!apiKey) throw new Error('Missing GEMINI_API_KEY');
 
     let model = 'gemini-2.5-flash';
-    if (provider === 'gemini-flash-lite') model = 'gemini-2.5-flash-lite';
+    if (provider === 'gemini-flash-lite') model = 'gemini-3.1-flash-lite-preview';
     if (provider === 'gemini-3.0-flash') model = 'gemini-2.0-flash'; // 3.0 uses 2.0 endpoint currently
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
@@ -477,7 +477,7 @@ export async function extractInterventions(opts: ExtractionOptions): Promise<Int
  * Models available for Smart Note generation.
  * Only Gemini 2.5 Flash and Gemini 3.0 Flash are supported.
  */
-export type SmartNoteModel = 'gemini-2.5-flash' | 'gemini-3-flash-preview' | 'gemini-3.0-flash' | 'gemini-2.5-flash-lite';
+export type SmartNoteModel = 'gemini-2.5-flash' | 'gemini-3-flash-preview' | 'gemini-3.0-flash' | 'gemini-3.1-flash-lite-preview';
 
 export interface SmartNoteGenerationResult {
     content: string;
@@ -512,7 +512,7 @@ export async function generateFromPrompt(
         'gemini-2.5-flash': 'gemini-2.5-flash',
         'gemini-3-flash-preview': 'gemini-3-flash-preview',
         'gemini-3.0-flash': 'gemini-3-flash-preview', // Backward-compatible alias
-        'gemini-2.5-flash-lite': 'gemini-2.5-flash-lite'
+        'gemini-3.1-flash-lite-preview': 'gemini-3.1-flash-lite-preview'
     };
 
     const apiModel = modelMap[model];
@@ -560,7 +560,7 @@ export async function generateFromPrompt(
         success = true;
 
         let providerKey: LLMProvider = 'gemini-flash';
-        if (model === 'gemini-2.5-flash-lite') providerKey = 'gemini-flash-lite';
+        if (model === 'gemini-3.1-flash-lite-preview') providerKey = 'gemini-flash-lite';
         if (model === 'gemini-3.0-flash' || model === 'gemini-3-flash-preview') providerKey = 'gemini-3.0-flash';
 
         const cost = calculateCost(providerKey, inputTokens, outputTokens);
