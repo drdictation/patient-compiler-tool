@@ -19,6 +19,7 @@ import { PatientMobileActions } from '@/components/patient-mobile-actions';
 import { TasksPanel } from '@/components/tasks-panel';
 import { GlobalSearch } from '@/components/global-search';
 import { AddPatientDialog } from '@/components/add-patient-dialog';
+import { notFound } from 'next/navigation';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,6 +33,10 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
         getPatientInterventions(id),
         getPatientTasks(id),
     ]);
+
+    if (!patient) {
+        notFound();
+    }
 
     // Calculate counts for sidebar
     const activeIssuesCount = issues.filter(i =>

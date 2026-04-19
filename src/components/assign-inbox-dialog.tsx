@@ -17,7 +17,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
 
 interface AssignInboxDialogProps {
     item: InboxItem;
@@ -34,13 +33,20 @@ export function AssignInboxDialog({ item }: AssignInboxDialogProps) {
 
     useEffect(() => {
         if (open) {
-            // Fetch patients when dialog opens
-            supabase
-                .from('canonical_patient')
-                .select('id, display_name')
-                .order('display_name')
-                .then(({ data }) => {
-                    if (data) setPatients(data);
+            fetch('/api/patient/options')
+                .then(async (res) => {
+                    if (!res.ok) {
+                        const body = await res.json().catch(() => ({}));
+                        throw new Error(body.error || 'Failed to load patients');
+                    }
+
+                    return res.json();
+                })
+                .then((data) => {
+                    setPatients(data.patients || []);
+                })
+                .catch((error: Error) => {
+                    toast.error(error.message);
                 });
         }
     }, [open]);

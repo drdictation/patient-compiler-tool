@@ -161,7 +161,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Interactive prompt tuning tool.")
     parser.add_argument("--prompt", choices=sorted(PROMPT_FILES.keys()), help="Prompt key to tune")
     parser.add_argument("--prompt-file", help="Path to a prompt TS file (overrides --prompt)")
-    parser.add_argument("--model", default="gemini-2.5-flash", help="Model for generation")
+    parser.add_argument("--model", default="gemini-3.0-flash", help="Model for generation")
     parser.add_argument("--editor-model", default=None, help="Model for prompt updates")
     parser.add_argument("--transcript-file", default=None, help="Path to transcript text file")
     parser.add_argument("--dry-run", action="store_true", help="Do not write prompt updates to disk")

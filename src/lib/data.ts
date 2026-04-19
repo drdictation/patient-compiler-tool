@@ -54,10 +54,10 @@ export async function getPatientDetails(id: string) {
         .from('canonical_patient')
         .select('*')
         .eq('id', id)
-        .single();
+        .maybeSingle();
 
     if (error) throw error;
-    return data as PatientDetails;
+    return data as PatientDetails | null;
 }
 
 export async function getPatientTimeline(patientId: string) {
