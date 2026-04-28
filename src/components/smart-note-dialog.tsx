@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
     Dialog,
     DialogContent,
@@ -82,8 +81,8 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
     // Generation options
     const [noteType, setNoteType] = useState<NoteType>('review_consult');
     const [encounterDate, setEncounterDate] = useState(new Date().toISOString().split('T')[0]);
-    const [generateNote, setGenerateNote] = useState(true);
-    const [generateLetter, setGenerateLetter] = useState(false);
+    const generateNote = true;
+    const generateLetter = true;
     const [letterType, setLetterType] = useState<LetterType>('review');
     const [templateType, setTemplateType] = useState<TemplateType>('general');
     const [model, setModel] = useState<SmartNoteModel>('gemini-3-flash-preview');
@@ -120,8 +119,6 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         setTranscript('');
         setNoteType('review_consult');
         setEncounterDate(new Date().toISOString().split('T')[0]);
-        setGenerateNote(true);
-        setGenerateLetter(false);
         setLetterType('review');
         setTemplateType('general');
         setModel('gemini-3-flash-preview');
@@ -283,85 +280,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         }
     };
 
-    const transcribeAudio = async () => {
-        if (audioSegmentsRef.current.length === 0) {
-            toast.error('No audio recorded');
-            return;
-        }
-
-        setIsTranscribing(true);
-        setTranscribeProgress({ current: 0, total: audioSegmentsRef.current.length });
-
-        try {
-            const transcripts: string[] = [];
-
-            // Important: We upload sequentially. Parallel uploads might hit serverless concurrency limits or rate limits
-            for (let i = 0; i < audioSegmentsRef.current.length; i++) {
-                setTranscribeProgress({ current: i + 1, total: audioSegmentsRef.current.length });
-
-                const segmentBlob = audioSegmentsRef.current[i];
-                const sizeMB = segmentBlob.size / (1024 * 1024);
-
-                if (sizeMB > MAX_CHUNK_MB) {
-                    throw new Error(`Segment ${i + 1} is unexpectedly too large (${sizeMB.toFixed(1)} MB). Vercel limit is ${MAX_CHUNK_MB} MB.`);
-                }
-
-                const formData = new FormData();
-                formData.append('file', segmentBlob, `recording-part-${i + 1}.webm`);
-
-                const response = await fetch('/api/transcribe', {
-                    method: 'POST',
-                    body: formData,
-                });
-
-                const data = await response.json();
-
-                if (!response.ok) {
-                    throw new Error(data.error || `Server responded with ${response.status}`);
-                }
-
-                if (data.transcript) {
-                    transcripts.push(data.transcript.trim());
-                } else {
-                    throw new Error('No transcript returned from server for segment');
-                }
-            }
-
-            if (transcripts.length > 0) {
-                setTranscript((prev) => {
-                    const existing = prev ? prev.trim() + '\n\n' : '';
-                    return existing + transcripts.filter(Boolean).join('\n\n');
-                });
-                toast.success('Audio transcribed successfully');
-            }
-
-        } catch (error: any) {
-            console.error('[SmartNote] Transcription error:', error);
-            const message = error?.message || 'Unknown error';
-            toast.error(`Failed to transcribe: ${message}`);
-        } finally {
-            setIsTranscribing(false);
-            setTranscribeProgress(null);
-        }
-    };
-
-    const formatDuration = (seconds: number) => {
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${mins}:${secs.toString().padStart(2, '0')}`;
-    };
-
-    const handleGenerate = () => {
-        if (!transcript.trim()) {
-            toast.error('Please enter or record a transcript');
-            return;
-        }
-
-        if (!generateNote && !generateLetter) {
-            toast.error('Please select at least one output type');
-            return;
-        }
-
+    const runSmartNoteGeneration = (transcriptText: string) => {
         setGenerationState({
             transcript: 'generating',
             note: generateNote ? 'generating' : 'idle',
@@ -375,7 +294,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                     patientId,
                     patientName,
                     date: encounterDate,
-                    transcript: transcript.trim(),
+                    transcript: transcriptText,
                     noteType,
                     outputs: {
                         generateNote,
@@ -430,6 +349,85 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                 });
             }
         });
+    };
+
+    const transcribeAudio = async () => {
+        if (audioSegmentsRef.current.length === 0) {
+            toast.error('No audio recorded');
+            return;
+        }
+
+        setIsTranscribing(true);
+        setTranscribeProgress({ current: 0, total: audioSegmentsRef.current.length });
+
+        try {
+            const transcripts: string[] = [];
+
+            // Important: We upload sequentially. Parallel uploads might hit serverless concurrency limits or rate limits
+            for (let i = 0; i < audioSegmentsRef.current.length; i++) {
+                setTranscribeProgress({ current: i + 1, total: audioSegmentsRef.current.length });
+
+                const segmentBlob = audioSegmentsRef.current[i];
+                const sizeMB = segmentBlob.size / (1024 * 1024);
+
+                if (sizeMB > MAX_CHUNK_MB) {
+                    throw new Error(`Segment ${i + 1} is unexpectedly too large (${sizeMB.toFixed(1)} MB). Vercel limit is ${MAX_CHUNK_MB} MB.`);
+                }
+
+                const formData = new FormData();
+                formData.append('file', segmentBlob, `recording-part-${i + 1}.webm`);
+
+                const response = await fetch('/api/transcribe', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || `Server responded with ${response.status}`);
+                }
+
+                if (data.transcript) {
+                    transcripts.push(data.transcript.trim());
+                } else {
+                    throw new Error('No transcript returned from server for segment');
+                }
+            }
+
+            if (transcripts.length === 0) {
+                throw new Error('No transcript returned from audio');
+            }
+
+            const appendedTranscript = transcripts.filter(Boolean).join('\n\n').trim();
+            const combinedTranscript = [transcript.trim(), appendedTranscript].filter(Boolean).join('\n\n');
+
+            setTranscript(combinedTranscript);
+            toast.success('Audio transcribed. Generating note and letter...');
+            runSmartNoteGeneration(combinedTranscript);
+        } catch (error: any) {
+            console.error('[SmartNote] Transcription error:', error);
+            const message = error?.message || 'Unknown error';
+            toast.error(`Failed to transcribe: ${message}`);
+        } finally {
+            setIsTranscribing(false);
+            setTranscribeProgress(null);
+        }
+    };
+
+    const formatDuration = (seconds: number) => {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    const handleGenerate = () => {
+        if (!transcript.trim()) {
+            toast.error('Please enter or record a transcript');
+            return;
+        }
+
+        runSmartNoteGeneration(transcript.trim());
     };
 
     const StatusIndicator = ({ status, label }: { status: GenerationStatus; label: string }) => {
@@ -539,29 +537,15 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                             </div>
 
                             <div className="space-y-2">
-                                <Label>Generate</Label>
-                                <div className="flex flex-wrap items-center gap-6 pt-1">
-                                    <div className="flex items-center space-x-3">
-                                        <Checkbox
-                                            id="generateNote"
-                                            checked={generateNote}
-                                            onCheckedChange={(c) => setGenerateNote(!!c)}
-                                        />
-                                        <Label htmlFor="generateNote" className="flex items-center gap-2 font-normal cursor-pointer">
-                                            <FileText className="h-4 w-4" />
-                                            Consult Note
-                                        </Label>
+                                <Label>Outputs</Label>
+                                <div className="flex flex-wrap items-center gap-6 pt-1 text-sm text-muted-foreground">
+                                    <div className="flex items-center gap-2">
+                                        <FileText className="h-4 w-4" />
+                                        <span>Consult note</span>
                                     </div>
-                                    <div className="flex items-center space-x-3">
-                                        <Checkbox
-                                            id="generateLetter"
-                                            checked={generateLetter}
-                                            onCheckedChange={(c) => setGenerateLetter(!!c)}
-                                        />
-                                        <Label htmlFor="generateLetter" className="flex items-center gap-2 font-normal cursor-pointer">
-                                            <Mail className="h-4 w-4" />
-                                            Letter
-                                        </Label>
+                                    <div className="flex items-center gap-2">
+                                        <Mail className="h-4 w-4" />
+                                        <span>Letter</span>
                                     </div>
                                 </div>
                             </div>
@@ -695,7 +679,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                                                 className="gap-2"
                                             >
                                                 {isTranscribing && <Loader2 className="h-4 w-4 animate-spin" />}
-                                                {isTranscribing ? 'Transcribing...' : 'Transcribe'}
+                                                {isTranscribing ? 'Transcribing...' : 'Transcribe & Generate'}
                                             </Button>
                                         </div>
                                     </div>
