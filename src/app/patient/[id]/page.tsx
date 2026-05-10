@@ -3,7 +3,7 @@ import { getPatientDetails, getPatientTimeline, getPatientIssues, getPatientInve
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, Calendar, ChevronRight, UserPlus } from 'lucide-react';
+import { ArrowLeft, Calendar, ChevronRight } from 'lucide-react';
 import { TimelineEntry } from '@/components/timeline-entry';
 import { EditablePatientTitle } from '@/components/editable-patient-title';
 import { IssuesPanel } from '@/components/issues-panel';
@@ -82,18 +82,7 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                     <SmartNoteDialog patientId={patient.id} patientName={patient.display_name} />
                     <Separator orientation="vertical" className="h-6" />
                     <AddPatientDialog />
-                    <Separator orientation="vertical" className="h-6" />
-                    <GlobalScanButton patientId={patient.id} />
-                    <PatientInfoToggle patient={patient} />
-                    <EditablePatientTitle
-                        patientId={patient.id}
-                        initialName={patient.display_name}
-                    />
-                    {patient.identity_verified && (
-                        <Badge variant="outline" className="border-green-200 text-green-700 bg-green-50">
-                            Verified
-                        </Badge>
-                    )}
+                    <GlobalSearch />
                 </div>
 
                 {/* Mobile: search + name only */}
@@ -105,9 +94,19 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                     />
                 </div>
 
-                {/* Global search — pushed to right on desktop */}
-                <div className="hidden sm:flex ml-auto">
-                    <GlobalSearch />
+                {/* Secondary patient actions — pushed to the right on desktop */}
+                <div className="hidden sm:flex ml-auto items-center gap-2">
+                    <GlobalScanButton patientId={patient.id} />
+                    <PatientInfoToggle patient={patient} />
+                    <EditablePatientTitle
+                        patientId={patient.id}
+                        initialName={patient.display_name}
+                    />
+                    {patient.identity_verified && (
+                        <Badge variant="outline" className="border-green-200 text-green-700 bg-green-50">
+                            Verified
+                        </Badge>
+                    )}
                 </div>
             </div>
 
