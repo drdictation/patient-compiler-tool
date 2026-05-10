@@ -4,9 +4,8 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import {
-    Calendar, ChevronDown, ChevronUp, FileText, Mic, MessageSquare
+    Calendar, ChevronDown, ChevronUp, FileText, Mic, MessageSquare, ScrollText
 } from 'lucide-react';
 import { SourceRecordCard } from '@/components/source-record-card';
 import { ArtifactSection } from '@/components/artifact-section';
@@ -27,7 +26,7 @@ interface Version {
 
 interface Artifact {
     id: string;
-    artifact_type: 'INTERNAL_NOTE' | 'REFERRER_LETTER';
+    artifact_type: 'RAW_TRANSCRIPT' | 'INTERNAL_NOTE' | 'REFERRER_LETTER';
     current_version: number;
     versions: Version[];
 }
@@ -78,6 +77,7 @@ export function TimelineEntry({ encounter, isLast }: TimelineEntryProps) {
 
     const summary = generateSummary(encounter);
     const recordCount = encounter.source_records.length;
+    const hasTranscript = encounter.artifacts.some(a => a.artifact_type === 'RAW_TRANSCRIPT' && a.versions.length > 0);
     const hasNotes = encounter.artifacts.some(a => a.artifact_type === 'INTERNAL_NOTE' && a.versions.length > 0);
     const hasLetters = encounter.artifacts.some(a => a.artifact_type === 'REFERRER_LETTER' && a.versions.length > 0);
 
@@ -113,6 +113,12 @@ export function TimelineEntry({ encounter, isLast }: TimelineEntryProps) {
                                     <Badge variant="secondary" className="text-[10px] h-5 bg-blue-50 text-blue-700">
                                         <FileText className="h-2.5 w-2.5 mr-1" />
                                         Notes
+                                    </Badge>
+                                )}
+                                {hasTranscript && (
+                                    <Badge variant="secondary" className="text-[10px] h-5 bg-amber-50 text-amber-700">
+                                        <ScrollText className="h-2.5 w-2.5 mr-1" />
+                                        Transcript
                                     </Badge>
                                 )}
                                 {hasLetters && (
@@ -182,6 +188,21 @@ export function TimelineEntry({ encounter, isLast }: TimelineEntryProps) {
                             {encounter.source_records.map((record) => (
                                 <SourceRecordCard key={record.id} record={record} />
                             ))}
+                        </div>
+                    )}
+
+                    {/* SMART NOTE TRANSCRIPT */}
+                    {hasTranscript && (
+                        <div className="space-y-3">
+                            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                Transcript
+                            </h4>
+                            <ArtifactSection
+                                encounterId={encounter.id}
+                                type="RAW_TRANSCRIPT"
+                                initialArtifact={encounter.artifacts.find(a => a.artifact_type === 'RAW_TRANSCRIPT')}
+                                readOnly
+                            />
                         </div>
                     )}
 

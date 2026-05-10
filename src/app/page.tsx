@@ -114,9 +114,9 @@ export default async function Dashboard(props: DashboardProps) {
 
           {/* Mobile-only compact action buttons */}
           <div className="flex gap-2 md:hidden">
+            <AddPatientDialog />
             <GlobalSearch />
             <TasksSidebar />
-            <AddPatientDialog />
             <Link href="/inbox">
               <Button variant="outline" size="icon" title="Inbox">
                 <Inbox className="h-4 w-4" />
@@ -133,13 +133,13 @@ export default async function Dashboard(props: DashboardProps) {
 
         {/* Desktop: LLM Cost Widget + Actions Row */}
         <div className="hidden md:flex items-center gap-4">
-          <GlobalSearch />
           <div className="w-64 h-24">
             <LLMCostDisplay />
           </div>
-          <div className="flex gap-2">
-            <TasksSidebar />
+          <div className="flex items-center gap-2">
             <AddPatientDialog />
+            <GlobalSearch />
+            <TasksSidebar />
             <Link href="/inbox">
               <Button variant="outline" size="icon" title="Inbox">
                 <Inbox className="h-4 w-4" />

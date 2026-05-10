@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
-import { Plus, Save, X, FileText, Mail, History, Copy } from 'lucide-react';
+import { Plus, Save, FileText, Mail, History, Copy, ScrollText } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
@@ -18,18 +18,19 @@ interface Version {
 
 interface Artifact {
     id: string;
-    artifact_type: 'INTERNAL_NOTE' | 'REFERRER_LETTER';
+    artifact_type: 'RAW_TRANSCRIPT' | 'INTERNAL_NOTE' | 'REFERRER_LETTER';
     current_version: number;
     versions: Version[];
 }
 
 interface ArtifactSectionProps {
     encounterId: string;
-    type: 'INTERNAL_NOTE' | 'REFERRER_LETTER';
+    type: 'RAW_TRANSCRIPT' | 'INTERNAL_NOTE' | 'REFERRER_LETTER';
     initialArtifact?: Artifact;
+    readOnly?: boolean;
 }
 
-export function ArtifactSection({ encounterId, type, initialArtifact }: ArtifactSectionProps) {
+export function ArtifactSection({ encounterId, type, initialArtifact, readOnly = false }: ArtifactSectionProps) {
     const [isEditing, setIsEditing] = useState(false);
     const [content, setContent] = useState(initialArtifact?.versions.find(v => v.version_number === initialArtifact.current_version)?.content || '');
     const [loading, setLoading] = useState(false);
@@ -51,7 +52,7 @@ export function ArtifactSection({ encounterId, type, initialArtifact }: Artifact
             setIsEditing(false);
             router.refresh(); // Refresh server data
             toast.success('Saved successfully');
-        } catch (e) {
+        } catch {
             toast.error('Error saving artifact');
         } finally {
             setLoading(false);
@@ -60,8 +61,8 @@ export function ArtifactSection({ encounterId, type, initialArtifact }: Artifact
 
     const currentVersionContent = initialArtifact?.versions.find(v => v.version_number === initialArtifact.current_version)?.content;
     const hasContent = !!initialArtifact;
-    const label = type === 'INTERNAL_NOTE' ? 'Internal Note' : 'Referrer Letter';
-    const Icon = type === 'INTERNAL_NOTE' ? FileText : Mail;
+    const label = type === 'RAW_TRANSCRIPT' ? 'Transcript' : type === 'INTERNAL_NOTE' ? 'Internal Note' : 'Referrer Letter';
+    const Icon = type === 'RAW_TRANSCRIPT' ? ScrollText : type === 'INTERNAL_NOTE' ? FileText : Mail;
 
     const handleCopy = async () => {
         if (contentRef.current) {
@@ -138,19 +139,25 @@ export function ArtifactSection({ encounterId, type, initialArtifact }: Artifact
                         <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setShowHistory(!showHistory)} title="History">
                             <History className="h-4 w-4 text-muted-foreground" />
                         </Button>
-                        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => {
-                            setContent(currentVersionContent || '');
-                            setIsEditing(true);
-                        }}>
-                            Edit
-                        </Button>
+                        {!readOnly && (
+                            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => {
+                                setContent(currentVersionContent || '');
+                                setIsEditing(true);
+                            }}>
+                                Edit
+                            </Button>
+                        )}
                     </div>
                 </CardHeader>
                 <CardContent
                     ref={contentRef}
                     className="py-3 px-4 text-sm font-sans text-slate-800 markdown-content"
                 >
-                    <ReactMarkdown>{currentVersionContent || ''}</ReactMarkdown>
+                    {type === 'RAW_TRANSCRIPT' ? (
+                        <p className="whitespace-pre-wrap font-serif">{currentVersionContent || ''}</p>
+                    ) : (
+                        <ReactMarkdown>{currentVersionContent || ''}</ReactMarkdown>
+                    )}
                 </CardContent>
 
                 {/* History View */}
@@ -199,7 +206,8 @@ export function ArtifactSection({ encounterId, type, initialArtifact }: Artifact
         );
     }
 
-    // EMPTY STATE ("Add New")
+    if (readOnly) return null;
+
     // EMPTY STATE ("Add New")
     return (
         <Button
