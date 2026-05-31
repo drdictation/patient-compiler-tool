@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
-    Calendar, ChevronDown, ChevronUp, FileText, Mic, MessageSquare, ScrollText
+    Calendar, ChevronDown, ChevronUp, FileText, Mic, MessageSquare, ScrollText, Check
 } from 'lucide-react';
 import { SourceRecordCard } from '@/components/source-record-card';
 import { ArtifactSection } from '@/components/artifact-section';
@@ -65,9 +65,36 @@ function generateSummary(encounter: Encounter): string {
     // Default
     return 'Clinical encounter recorded.';
 }
-
 export function TimelineEntry({ encounter, isLast }: TimelineEntryProps) {
     const [isExpanded, setIsExpanded] = useState(false);
+    const [copiedNote, setCopiedNote] = useState(false);
+    const [copiedLetter, setCopiedLetter] = useState(false);
+
+    const handleCopyNote = (e: React.MouseEvent) => {
+        e.stopPropagation(); // Prevent card expansion
+        const noteArtifact = encounter.artifacts.find(a => a.artifact_type === 'INTERNAL_NOTE');
+        const latestNoteVersion = noteArtifact?.versions.find(v => v.version_number === noteArtifact.current_version) || noteArtifact?.versions[0];
+        const content = latestNoteVersion?.content || '';
+        
+        if (content) {
+            navigator.clipboard.writeText(content);
+            setCopiedNote(true);
+            setTimeout(() => setCopiedNote(false), 2000);
+        }
+    };
+
+    const handleCopyLetter = (e: React.MouseEvent) => {
+        e.stopPropagation(); // Prevent card expansion
+        const letterArtifact = encounter.artifacts.find(a => a.artifact_type === 'REFERRER_LETTER');
+        const latestLetterVersion = letterArtifact?.versions.find(v => v.version_number === letterArtifact.current_version) || letterArtifact?.versions[0];
+        const content = latestLetterVersion?.content || '';
+        
+        if (content) {
+            navigator.clipboard.writeText(content);
+            setCopiedLetter(true);
+            setTimeout(() => setCopiedLetter(false), 2000);
+        }
+    };
 
     const date = new Date(encounter.encounter_date);
     const formattedDate = date.toLocaleDateString('en-US', {
@@ -130,13 +157,63 @@ export function TimelineEntry({ encounter, isLast }: TimelineEntryProps) {
                             </div>
                             <p className="text-sm text-slate-600 mt-1.5 line-clamp-2">{summary}</p>
                         </div>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-slate-400 group-hover/card:text-indigo-600 transition-colors ml-2"
-                        >
-                            <ChevronDown className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center gap-2 ml-2 flex-shrink-0">
+                            {hasNotes && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={handleCopyNote}
+                                    className={`h-7 px-2.5 gap-1.5 transition-all text-xs font-medium border-slate-200 shadow-sm ${
+                                        copiedNote 
+                                            ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-50 hover:text-green-700' 
+                                            : 'bg-white hover:bg-slate-50 hover:text-indigo-600'
+                                    }`}
+                                >
+                                    {copiedNote ? (
+                                        <>
+                                            <Check className="h-3.5 w-3.5 animate-pulse" />
+                                            <span>Note Copied</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <FileText className="h-3.5 w-3.5 text-slate-400 group-hover/card:text-indigo-500" />
+                                            <span>Copy Note</span>
+                                        </>
+                                    )}
+                                </Button>
+                            )}
+                            {hasLetters && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={handleCopyLetter}
+                                    className={`h-7 px-2.5 gap-1.5 transition-all text-xs font-medium border-slate-200 shadow-sm ${
+                                        copiedLetter 
+                                            ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-50 hover:text-green-700' 
+                                            : 'bg-white hover:bg-slate-50 hover:text-indigo-600'
+                                    }`}
+                                >
+                                    {copiedLetter ? (
+                                        <>
+                                            <Check className="h-3.5 w-3.5 animate-pulse" />
+                                            <span>Letter Copied</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <MessageSquare className="h-3.5 w-3.5 text-slate-400 group-hover/card:text-indigo-500" />
+                                            <span>Copy Letter</span>
+                                        </>
+                                    )}
+                                </Button>
+                            )}
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2 text-slate-400 group-hover/card:text-indigo-600 transition-colors"
+                            >
+                                <ChevronDown className="h-4 w-4" />
+                            </Button>
+                        </div>
                     </CardHeader>
                 </Card>
             </div>
