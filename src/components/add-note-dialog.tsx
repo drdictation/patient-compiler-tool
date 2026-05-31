@@ -21,10 +21,11 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { Plus, FileText, Mail, Loader2 } from 'lucide-react';
+import { Plus, FileText, Mail, Loader2, Scan } from 'lucide-react';
 import { createManualNote } from '@/app/actions';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
+import { createWorker } from 'tesseract.js';
 
 interface AddNoteDialogProps {
     patientId: string;
@@ -38,6 +39,70 @@ export function AddNoteDialog({ patientId, asMobileButton = false }: AddNoteDial
     const [content, setContent] = useState('');
     const [isPending, startTransition] = useTransition();
     const router = useRouter();
+
+    const [isOcrPending, setIsOcrPending] = useState(false);
+
+    const processImage = async (file: File) => {
+        setIsOcrPending(true);
+        const toastId = toast.loading('Extracting text locally on your Mac...');
+        try {
+            const worker = await createWorker('eng');
+            const ret = await worker.recognize(file);
+            const extractedText = ret.data.text;
+            await worker.terminate();
+
+            if (!extractedText || !extractedText.trim()) {
+                toast.error('No text found in image', { id: toastId });
+                setIsOcrPending(false);
+                return;
+            }
+
+            toast.loading('Analyzing clinical details with Gemini...', { id: toastId });
+
+            // Call our clinical-brief API
+            const response = await fetch('/api/clinical-brief', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: extractedText }),
+            });
+
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Clinical brief failed');
+
+            const clinicalBrief = data.brief;
+
+            // Auto populate text area
+            setContent(prev => {
+                const briefHeader = `Brief: ${clinicalBrief}\n\n`;
+                const divider = `--- Local OCR Transcript ---\n`;
+                const existing = prev ? `\n\n${prev}` : '';
+                return `${briefHeader}${divider}${extractedText}${existing}`;
+            });
+
+            toast.success('Clinical note generated successfully!', { id: toastId });
+        } catch (e: any) {
+            console.error('OCR Error:', e);
+            toast.error(`Local OCR Failed: ${e.message}`, { id: toastId });
+        } finally {
+            setIsOcrPending(false);
+        }
+    };
+
+    const handlePaste = async (e: React.ClipboardEvent) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            if (item.type.indexOf('image') !== -1) {
+                const file = item.getAsFile();
+                if (file) {
+                    e.preventDefault();
+                    await processImage(file);
+                }
+            }
+        }
+    };
 
     const handleSave = () => {
         if (!content.trim()) {
@@ -84,7 +149,38 @@ export function AddNoteDialog({ patientId, asMobileButton = false }: AddNoteDial
                         Add a new note to the patient's timeline. You can backdate the note if needed.
                     </DialogDescription>
                 </DialogHeader>
-                <div className="flex-1 overflow-y-auto px-1 py-2 space-y-4">
+                <div className="flex-1 overflow-y-auto px-1 py-2 space-y-4" onPaste={handlePaste}>
+                    {/* Visual Screenshot OCR paste area */}
+                    <div className="border-2 border-dashed border-slate-200 hover:border-blue-400 rounded-lg p-4 bg-slate-50/50 hover:bg-slate-50 transition-all flex flex-col items-center justify-center text-center cursor-pointer group relative overflow-hidden">
+                        <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) processImage(file);
+                            }}
+                            className="absolute inset-0 opacity-0 cursor-pointer"
+                            disabled={isOcrPending || isPending}
+                        />
+                        {isOcrPending ? (
+                            <div className="flex flex-col items-center gap-2 py-2">
+                                <Loader2 className="h-6 w-6 text-blue-500 animate-spin" />
+                                <p className="text-sm font-semibold text-blue-600 animate-pulse">Running local Mac OCR...</p>
+                                <p className="text-xs text-muted-foreground">Extracting document text completely locally</p>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col items-center gap-1.5 py-1">
+                                <div className="p-2 bg-white rounded-full shadow-sm text-slate-400 group-hover:text-blue-500 group-hover:scale-110 transition-all">
+                                    <Scan className="h-5 w-5" />
+                                </div>
+                                <p className="text-sm font-medium text-slate-700">
+                                    <span className="text-blue-600 font-semibold">Paste screenshot</span> or drag & drop here
+                                </p>
+                                <p className="text-xs text-slate-400">Zero API-cost local OCR • JPEG, PNG</p>
+                            </div>
+                        )}
+                    </div>
+
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                             <Label htmlFor="noteType">Note Type</Label>

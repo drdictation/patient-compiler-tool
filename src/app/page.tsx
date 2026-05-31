@@ -8,6 +8,7 @@ import { AddPatientDialog } from '@/components/add-patient-dialog';
 import { LLMCostDisplay } from '@/components/llm-cost-display';
 import { TasksSidebar } from '@/components/tasks-sidebar';
 import { GlobalSearch } from '@/components/global-search';
+import { EndoscopyListDialog } from '@/components/endoscopy-list-dialog';
 
 export const dynamic = 'force-dynamic';
 
@@ -114,6 +115,7 @@ export default async function Dashboard(props: DashboardProps) {
 
           {/* Mobile-only compact action buttons */}
           <div className="flex gap-2 md:hidden">
+            <EndoscopyListDialog patients={patients || []} />
             <AddPatientDialog />
             <GlobalSearch />
             <TasksSidebar />
@@ -137,6 +139,7 @@ export default async function Dashboard(props: DashboardProps) {
             <LLMCostDisplay />
           </div>
           <div className="flex items-center gap-2">
+            <EndoscopyListDialog patients={patients || []} />
             <AddPatientDialog />
             <GlobalSearch />
             <TasksSidebar />
