@@ -79,7 +79,8 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                 {/* Action buttons — left-aligned, visible on sm+ */}
                 <div className="hidden sm:flex items-center gap-2">
                     <AddNoteDialog patientId={patient.id} />
-                    <SmartNoteDialog patientId={patient.id} patientName={patient.display_name} />
+                    <SmartNoteDialog patientId={patient.id} patientName={patient.display_name} mode="quick-record" />
+                    <SmartNoteDialog patientId={patient.id} patientName={patient.display_name} mode="standard" />
                     <Separator orientation="vertical" className="h-6" />
                     <AddPatientDialog />
                     <GlobalSearch />

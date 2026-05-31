@@ -32,6 +32,7 @@ interface SmartNoteDialogProps {
     patientId: string;
     patientName: string;
     asMobileButton?: boolean;
+    mode?: 'standard' | 'quick-record';
 }
 
 type InputMode = 'paste' | 'record';
@@ -47,7 +48,7 @@ interface GenerationState {
     tasks: GenerationStatus;
 }
 
-export function SmartNoteDialog({ patientId, patientName, asMobileButton = false }: SmartNoteDialogProps) {
+export function SmartNoteDialog({ patientId, patientName, asMobileButton = false, mode = 'standard' }: SmartNoteDialogProps) {
     const MAX_CHUNK_MB = 4.5;
     const MAX_TOTAL_MB = 25;
 
@@ -115,25 +116,6 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         };
     }, []); // Empty dependency array - only run cleanup on unmount
 
-    const resetState = () => {
-        setTranscript('');
-        setNoteType('review_consult');
-        setEncounterDate(new Date().toISOString().split('T')[0]);
-        setLetterType('review');
-        setTemplateType('general');
-        setModel('gemini-3-flash-preview');
-        setGenerationState({ transcript: 'idle', note: 'idle', letter: 'idle', tasks: 'idle' });
-        setRecordingDuration(0);
-        setAudioSizeMB(0);
-        setIsRecording(false);
-        setHasRecording(false);
-        setIsTranscribing(false);
-
-        setTranscribeProgress(null);
-
-        audioChunksRef.current = [];
-        audioSegmentsRef.current = [];
-    };
 
     // Audio recording functions
     const startRecording = async () => {
@@ -279,6 +261,41 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
             chunkTimerRef.current = null;
         }
     };
+
+    const resetState = () => {
+        stopRecording(); // Release audio resources cleanly
+
+        setTranscript('');
+        setNoteType('review_consult');
+        setEncounterDate(new Date().toISOString().split('T')[0]);
+        setLetterType('review');
+        setTemplateType('general');
+        setModel('gemini-3-flash-preview');
+        setGenerationState({ transcript: 'idle', note: 'idle', letter: 'idle', tasks: 'idle' });
+        setRecordingDuration(0);
+        setAudioSizeMB(0);
+        setIsRecording(false);
+        setHasRecording(false);
+        setIsTranscribing(false);
+
+        setTranscribeProgress(null);
+
+        audioChunksRef.current = [];
+        audioSegmentsRef.current = [];
+    };
+
+    // Auto-start recording for Quick Record mode
+    useEffect(() => {
+        if (open && mode === 'quick-record') {
+            setInputMode('record');
+            setNoteType('review_consult');
+            setLetterType('review');
+            const timer = setTimeout(() => {
+                startRecording();
+            }, 200);
+            return () => clearTimeout(timer);
+        }
+    }, [open, mode]);
 
     const runSmartNoteGeneration = (transcriptText: string) => {
         setGenerationState({
@@ -450,16 +467,42 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         );
     };
 
-    const triggerButton = asMobileButton ? (
-        <Button variant="ghost" size="sm" className="flex-col h-auto py-2 px-3 gap-1">
-            <Sparkles className="h-5 w-5" />
-            <span className="text-[10px]">Smart Note</span>
-        </Button>
+    const triggerButton = mode === 'quick-record' ? (
+        asMobileButton ? (
+            <Button variant="ghost" size="sm" className="flex-col h-auto py-2 px-3 gap-1 text-rose-600 hover:text-rose-700 hover:bg-rose-50/50">
+                <div className="relative">
+                    <Mic className="h-5 w-5 text-red-500" />
+                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border border-white animate-ping" />
+                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border border-white" />
+                </div>
+                <span className="text-[10px] font-semibold text-rose-700">Quick Record</span>
+            </Button>
+        ) : (
+            <Button 
+                size="sm" 
+                variant="default" 
+                className="gap-2 bg-gradient-to-r from-red-500 to-rose-500 hover:from-red-600 hover:to-rose-600 text-white font-medium shadow-sm transition-all duration-300 hover:shadow-md border-0 group relative overflow-hidden active:scale-95"
+            >
+                <div className="relative flex items-center justify-center">
+                    <Mic className="h-4 w-4 group-hover:scale-110 transition-transform duration-200" />
+                    <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-white rounded-full animate-ping" />
+                    <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-white rounded-full" />
+                </div>
+                <span>Quick Record Review</span>
+            </Button>
+        )
     ) : (
-        <Button size="sm" variant="outline" className="gap-2">
-            <Sparkles className="h-4 w-4" />
-            Smart Note
-        </Button>
+        asMobileButton ? (
+            <Button variant="ghost" size="sm" className="flex-col h-auto py-2 px-3 gap-1">
+                <Sparkles className="h-5 w-5" />
+                <span className="text-[10px]">Smart Note</span>
+            </Button>
+        ) : (
+            <Button size="sm" variant="outline" className="gap-2">
+                <Sparkles className="h-4 w-4" />
+                Smart Note
+            </Button>
+        )
     );
 
     return (
@@ -469,12 +512,34 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
             </DialogTrigger>
             <DialogContent className="sm:max-w-[700px] max-h-[90vh] flex flex-col">
                 <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2">
-                        <Sparkles className="h-5 w-5 text-amber-500" />
-                        Smart Note
+                    <DialogTitle className="flex items-center gap-2 justify-between">
+                        <div className="flex items-center gap-2">
+                            {mode === 'quick-record' ? (
+                                <>
+                                    <div className="relative p-1 bg-red-50 rounded-lg text-red-600">
+                                        <Mic className="h-5 w-5 animate-pulse" />
+                                    </div>
+                                    <span className="font-semibold text-slate-800">Quick Record: Review Consult</span>
+                                </>
+                            ) : (
+                                <>
+                                    <Sparkles className="h-5 w-5 text-amber-500 animate-pulse" />
+                                    <span className="font-semibold text-slate-800">Smart Note</span>
+                                </>
+                            )}
+                        </div>
+                        {mode === 'quick-record' && isRecording && (
+                            <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-red-700 animate-pulse border border-red-200">
+                                <span className="w-1.5 h-1.5 bg-red-600 rounded-full" />
+                                Live Recording
+                            </span>
+                        )}
                     </DialogTitle>
                     <DialogDescription>
-                        Generate structured notes and letters from a transcript using AI.
+                        {mode === 'quick-record'
+                            ? `Recording a review consultation for ${patientName}. The audio will be automatically transcribed and analyzed.`
+                            : "Generate structured notes and letters from a transcript using AI."
+                        }
                     </DialogDescription>
                 </DialogHeader>
 

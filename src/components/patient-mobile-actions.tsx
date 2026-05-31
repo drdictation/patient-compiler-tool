@@ -23,8 +23,11 @@ export function PatientMobileActions({ patientId, patientName, patient }: Patien
                 {/* Add Note - inline dialog */}
                 <AddNoteDialog patientId={patientId} asMobileButton />
 
+                {/* Quick Record - inline dialog */}
+                <SmartNoteDialog patientId={patientId} patientName={patientName} asMobileButton mode="quick-record" />
+
                 {/* Smart Note - inline dialog */}
-                <SmartNoteDialog patientId={patientId} patientName={patientName} asMobileButton />
+                <SmartNoteDialog patientId={patientId} patientName={patientName} asMobileButton mode="standard" />
 
                 {/* Global Scan */}
                 <GlobalScanButton patientId={patientId} asMobileButton />
