@@ -202,6 +202,8 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                 // Rotation stops are handled by rotateRecorder which calls finalizeCurrentSegment first
                 if (!isRecordingRef.current) {
                     finalizeCurrentSegment();
+                    // Automatically trigger transcription and note generation
+                    transcribeAudioRef.current();
                 } else if (!isRotating) {
                     // Mid-recording stop triggered by size limit — rotate to new recorder
                     rotateRecorder();
@@ -431,6 +433,11 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
             setTranscribeProgress(null);
         }
     };
+
+    const transcribeAudioRef = useRef(transcribeAudio);
+    useEffect(() => {
+        transcribeAudioRef.current = transcribeAudio;
+    });
 
     const formatDuration = (seconds: number) => {
         const mins = Math.floor(seconds / 60);
