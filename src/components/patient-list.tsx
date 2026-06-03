@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
@@ -12,9 +12,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { PatientRowActions } from '@/components/patient-row-actions';
-import { Trash2, Merge, X, Search, Filter } from 'lucide-react';
+import { Trash2, Merge, X, Search, Filter, FileText, MessageSquare, Loader2, Check } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useDebounce } from 'use-debounce';
+import ReactMarkdown from 'react-markdown';
+import { getLatestPatientArtifact } from '@/app/actions';
 
 interface Patient {
     id: string;
@@ -29,6 +31,145 @@ interface Patient {
     next_recall_date?: string | null;
     suggested_items_count?: number;
     pending_task_count?: number;
+}
+
+interface QuickCopyButtonProps {
+    patientId: string;
+    type: 'INTERNAL_NOTE' | 'REFERRER_LETTER';
+    label: string;
+}
+
+function QuickCopyButton({ patientId, type, label }: QuickCopyButtonProps) {
+    const [loading, setLoading] = useState(false);
+    const [copied, setCopied] = useState(false);
+    const [markdownContent, setMarkdownContent] = useState<string | null>(null);
+    const hiddenRef = useRef<HTMLDivElement>(null);
+
+    const handleCopy = async (e: React.MouseEvent) => {
+        e.stopPropagation(); // Prevent row navigation
+        e.preventDefault();  // Prevent default Link action
+        if (loading || copied) return;
+
+        setLoading(true);
+        try {
+            const content = await getLatestPatientArtifact(patientId, type);
+            if (!content) {
+                toast.error(`No recent ${label.toLowerCase()} found for this patient`);
+                setLoading(false);
+                return;
+            }
+
+            // Set the markdown content to render it in the hidden container
+            setMarkdownContent(content);
+
+            // Wait for React to render the hidden container
+            setTimeout(async () => {
+                if (hiddenRef.current) {
+                    try {
+                        const element = hiddenRef.current;
+                        const clone = element.cloneNode(true) as HTMLElement;
+                        const baseStyle = 'font-family: Arial, sans-serif; font-size: 10pt;';
+                        clone.style.cssText = baseStyle;
+
+                        // Style all paragraphs
+                        clone.querySelectorAll('p').forEach((p) => {
+                            (p as HTMLElement).style.cssText = `${baseStyle} margin: 6pt 0;`;
+                        });
+
+                        // Style all list items and lists with proper indentation
+                        clone.querySelectorAll('ul, ol').forEach((list) => {
+                            (list as HTMLElement).style.cssText = `${baseStyle} margin-left: 24pt; padding-left: 0; margin-top: 6pt; margin-bottom: 6pt;`;
+                        });
+
+                        clone.querySelectorAll('li').forEach((li) => {
+                            (li as HTMLElement).style.cssText = `${baseStyle} margin: 3pt 0;`;
+                        });
+
+                        // Style headings
+                        clone.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach((h) => {
+                            (h as HTMLElement).style.cssText = `${baseStyle} font-weight: bold; margin-top: 12pt; margin-bottom: 6pt;`;
+                        });
+
+                        // Style strong/bold
+                        clone.querySelectorAll('strong, b').forEach((s) => {
+                            (s as HTMLElement).style.cssText = `${baseStyle} font-weight: bold;`;
+                        });
+
+                        const html = clone.innerHTML;
+                        const text = element.innerText;
+
+                        const blob = new Blob([`<div style="${baseStyle}">${html}</div>`], { type: 'text/html' });
+                        const textBlob = new Blob([text], { type: 'text/plain' });
+
+                        await navigator.clipboard.write([
+                            new ClipboardItem({
+                                'text/html': blob,
+                                'text/plain': textBlob,
+                            })
+                        ]);
+                        toast.success(`Recent ${label.toLowerCase()} copied with formatting`);
+                        setCopied(true);
+                        setTimeout(() => setCopied(false), 2000);
+                    } catch (err) {
+                        console.error('[QuickCopy] Rich copy failed, falling back:', err);
+                        // Fallback to plain text
+                        await navigator.clipboard.writeText(content);
+                        toast.success(`Recent ${label.toLowerCase()} copied as plain text`);
+                        setCopied(true);
+                        setTimeout(() => setCopied(false), 2000);
+                    } finally {
+                        setMarkdownContent(null);
+                    }
+                }
+                setLoading(false);
+            }, 100);
+
+        } catch (err) {
+            console.error('Failed to copy latest artifact:', err);
+            toast.error('Failed to copy recent record');
+            setLoading(false);
+        }
+    };
+
+    const Icon = type === 'INTERNAL_NOTE' ? FileText : MessageSquare;
+
+    return (
+        <div className="relative inline-block" onClick={(e) => e.stopPropagation()}>
+            <Button
+                variant="outline"
+                size="sm"
+                className={`h-7 px-2.5 gap-1.5 transition-all text-xs font-medium border-slate-200 shadow-sm ${
+                    copied 
+                        ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-50 hover:text-green-700' 
+                        : 'bg-white hover:bg-slate-50 hover:text-indigo-600'
+                }`}
+                onClick={handleCopy}
+                disabled={loading}
+                title={`Copy Most Recent ${label}`}
+            >
+                {loading ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : copied ? (
+                    <Check className="h-3.5 w-3.5" />
+                ) : (
+                    <>
+                        <Icon className="h-3.5 w-3.5 text-slate-400 group-hover:text-indigo-600" />
+                        <span>Copy {label}</span>
+                    </>
+                )}
+            </Button>
+
+            {/* Hidden container for copying with rich formatting */}
+            {markdownContent && (
+                <div 
+                    ref={hiddenRef}
+                    style={{ position: 'absolute', left: '-9999px', top: '-9999px', opacity: 0, pointerEvents: 'none' }}
+                >
+                    <ReactMarkdown>{markdownContent}</ReactMarkdown>
+                </div>
+            )}
+        </div>
+    );
 }
 
 export function PatientList({ initialPatients }: { initialPatients: Patient[] }) {
@@ -291,14 +432,31 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                                         />
                                     </td>
                                     <td className="py-3 px-4 font-medium text-slate-900 group-hover:text-primary">
-                                        <Link href={`/patient/${patient.id}`} className="hover:underline flex flex-col justify-center h-full w-full">
-                                            <span>{patient.display_name}</span>
-                                            {patient.referring_doctor && (
-                                                <span className="text-[10px] text-muted-foreground font-normal">
-                                                    Ref: {patient.referring_doctor}
-                                                </span>
+                                        <div className="flex items-center justify-between gap-4 w-full">
+                                            <Link href={`/patient/${patient.id}`} className="hover:underline flex flex-col justify-center min-w-0">
+                                                <span>{patient.display_name}</span>
+                                                {patient.referring_doctor && (
+                                                    <span className="text-[10px] text-muted-foreground font-normal">
+                                                        Ref: {patient.referring_doctor}
+                                                    </span>
+                                                )}
+                                            </Link>
+                                            
+                                            {patient.encounter_count > 0 && (
+                                                <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                                                    <QuickCopyButton
+                                                        patientId={patient.id}
+                                                        type="INTERNAL_NOTE"
+                                                        label="Note"
+                                                    />
+                                                    <QuickCopyButton
+                                                        patientId={patient.id}
+                                                        type="REFERRER_LETTER"
+                                                        label="Letter"
+                                                    />
+                                                </div>
                                             )}
-                                        </Link>
+                                        </div>
                                     </td>
                                     <td className="py-3 px-4">
                                         <div className="flex items-center gap-2">
@@ -377,24 +535,41 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                                         onCheckedChange={() => toggleSelect(patient.id)}
                                         className="mt-1"
                                     />
-                                    <Link href={`/patient/${patient.id}`} className="flex-1 min-w-0">
-                                        <h3 className="font-semibold text-slate-900 truncate">
-                                            {patient.display_name}
-                                        </h3>
-                                        {patient.referring_doctor && (
-                                            <p className="text-xs text-muted-foreground truncate">
-                                                Ref: {patient.referring_doctor}
-                                            </p>
-                                        )}
-                                        <div className="flex items-center gap-3 mt-2 text-xs text-slate-500">
-                                            <span>Seen: {patient.last_seen ? new Date(patient.last_seen).toLocaleDateString() : 'Never'}</span>
-                                            {patient.next_recall_date && (
-                                                <span className={new Date(patient.next_recall_date) < new Date() ? "text-red-500 font-medium" : ""}>
-                                                    Recall: {new Date(patient.next_recall_date).toLocaleDateString()}
-                                                </span>
+                                    <div className="flex-1 min-w-0">
+                                        <Link href={`/patient/${patient.id}`} className="block">
+                                            <h3 className="font-semibold text-slate-900 truncate">
+                                                {patient.display_name}
+                                            </h3>
+                                            {patient.referring_doctor && (
+                                                <p className="text-xs text-muted-foreground truncate">
+                                                    Ref: {patient.referring_doctor}
+                                                </p>
                                             )}
-                                        </div>
-                                    </Link>
+                                            <div className="flex items-center gap-3 mt-2 text-xs text-slate-500">
+                                                <span>Seen: {patient.last_seen ? new Date(patient.last_seen).toLocaleDateString() : 'Never'}</span>
+                                                {patient.next_recall_date && (
+                                                    <span className={new Date(patient.next_recall_date) < new Date() ? "text-red-500 font-medium" : ""}>
+                                                        Recall: {new Date(patient.next_recall_date).toLocaleDateString()}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </Link>
+                                        
+                                        {patient.encounter_count > 0 && (
+                                            <div className="flex items-center gap-2 mt-3">
+                                                <QuickCopyButton
+                                                    patientId={patient.id}
+                                                    type="INTERNAL_NOTE"
+                                                    label="Note"
+                                                />
+                                                <QuickCopyButton
+                                                    patientId={patient.id}
+                                                    type="REFERRER_LETTER"
+                                                    label="Letter"
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     {(patient.pending_task_count || 0) > 0 && (

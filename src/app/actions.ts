@@ -1046,3 +1046,49 @@ export async function suggestPatientForInboxItem(itemId: string): Promise<{
         return { error: e.message };
     }
 }
+
+/**
+ * Fetch the latest version content of a patient's note or letter.
+ */
+export async function getLatestPatientArtifact(
+    patientId: string,
+    artifactType: 'INTERNAL_NOTE' | 'REFERRER_LETTER'
+): Promise<string | null> {
+    try {
+        // 1. Get the latest encounter date for this patient
+        const { data: latestEncounter, error: encError } = await supabase
+            .from('encounter')
+            .select('id')
+            .eq('canonical_patient_id', patientId)
+            .order('encounter_date', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        if (encError || !latestEncounter) return null;
+
+        // 2. Get the artifact of specified type for this encounter
+        const { data: artifact, error: artError } = await supabase
+            .from('artifact')
+            .select('id, current_version')
+            .eq('encounter_id', latestEncounter.id)
+            .eq('artifact_type', artifactType)
+            .maybeSingle();
+
+        if (artError || !artifact) return null;
+
+        // 3. Get the content of the current version of this artifact
+        const { data: version, error: verError } = await supabase
+            .from('artifact_version')
+            .select('content')
+            .eq('artifact_id', artifact.id)
+            .eq('version_number', artifact.current_version)
+            .maybeSingle();
+
+        if (verError || !version) return null;
+
+        return version.content;
+    } catch (e) {
+        console.error('Failed to get latest patient artifact:', e);
+        return null;
+    }
+}

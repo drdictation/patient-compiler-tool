@@ -74,8 +74,8 @@ export default async function Dashboard(props: DashboardProps) {
     // Ascending because we want "Soonest" first, but NULLS LAST
     query = query.order('next_recall_date', { ascending: true, nullsFirst: false });
   } else {
-    // Default: Last Seen (Recent First)
-    query = query.order('last_seen', { ascending: false });
+    // Default: Last Seen (Recent First, NULLS LAST)
+    query = query.order('last_seen', { ascending: false, nullsFirst: false });
   }
 
   const [{ data: patients, error }, { count: totalRecords }] = await Promise.all([
