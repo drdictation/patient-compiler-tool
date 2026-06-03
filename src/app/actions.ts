@@ -578,6 +578,30 @@ export async function createSmartNote(options: SmartNoteOptions): Promise<SmartN
     const { patientId, patientName, date, transcript, noteType, outputs, model } = options;
     const result: SmartNoteResult = { errors: [] };
 
+    let formattedDate: string | undefined = undefined;
+    if (date) {
+        try {
+            const parts = date.split('-');
+            if (parts.length === 3) {
+                const year = parts[0];
+                const monthIndex = parseInt(parts[1], 10) - 1;
+                const day = parseInt(parts[2], 10);
+                const monthNames = [
+                    "January", "February", "March", "April", "May", "June", 
+                    "July", "August", "September", "October", "November", "December"
+                ];
+                if (monthIndex >= 0 && monthIndex < 12) {
+                    formattedDate = `${day} ${monthNames[monthIndex]} ${year}`;
+                }
+            }
+        } catch (e) {
+            console.error('Failed to parse date string:', date, e);
+        }
+        if (!formattedDate) {
+            formattedDate = date;
+        }
+    }
+
     try {
         // 1. Ensure encounter exists
         const encounterId = await ensureEncounter(patientId, date);
@@ -601,7 +625,8 @@ export async function createSmartNote(options: SmartNoteOptions): Promise<SmartN
                     prompt,
                     model, // Use user-selected model
                     patientId,
-                    'smart_note_consult'
+                    'smart_note_consult',
+                    formattedDate
                 );
                 result.noteArtifactId = await saveArtifact(encounterId, 'INTERNAL_NOTE', content);
             } catch (e: any) {
@@ -638,7 +663,8 @@ export async function createSmartNote(options: SmartNoteOptions): Promise<SmartN
                     prompt,
                     model,
                     patientId,
-                    'smart_note_letter'
+                    'smart_note_letter',
+                    formattedDate
                 );
                 result.letterArtifactId = await saveArtifact(encounterId, 'REFERRER_LETTER', content);
             } catch (e: any) {

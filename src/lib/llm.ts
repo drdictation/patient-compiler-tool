@@ -502,7 +502,8 @@ export async function generateFromPrompt(
     prompt: string,
     model: SmartNoteModel,
     patientId?: string,
-    purpose: string = 'smart_note'
+    purpose: string = 'smart_note',
+    date?: string
 ): Promise<SmartNoteGenerationResult> {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error('Missing GEMINI_API_KEY');
@@ -518,10 +519,19 @@ export async function generateFromPrompt(
     const apiModel = modelMap[model];
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${apiModel}:generateContent?key=${apiKey}`;
 
+    let transcriptWithDate = transcript;
+    if (date) {
+        transcriptWithDate = `Date of Consultation: ${date}\n\n${transcript}`;
+    }
+
     // Replace placeholders with actual values
-    const fullPrompt = prompt
+    let fullPrompt = prompt
         .replace('{{PATIENT_NAME}}', patientName)
-        .replace('{{TRANSCRIPT}}', transcript);
+        .replace('{{TRANSCRIPT}}', transcriptWithDate);
+
+    if (date) {
+        fullPrompt = fullPrompt.replaceAll('{{DATE}}', date);
+    }
 
     const body = {
         contents: [{
