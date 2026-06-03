@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import { SourceRecordCard } from '@/components/source-record-card';
 import { ArtifactSection } from '@/components/artifact-section';
+import ReactMarkdown from 'react-markdown';
+import { toast } from 'sonner';
 
 interface SourceRecord {
     id: string;
@@ -70,29 +72,103 @@ export function TimelineEntry({ encounter, isLast }: TimelineEntryProps) {
     const [copiedNote, setCopiedNote] = useState(false);
     const [copiedLetter, setCopiedLetter] = useState(false);
 
-    const handleCopyNote = (e: React.MouseEvent) => {
+    const noteRef = useRef<HTMLDivElement>(null);
+    const letterRef = useRef<HTMLDivElement>(null);
+
+    const copyRichText = async (element: HTMLDivElement | null, plainTextFallback: string, label: string) => {
+        if (element) {
+            try {
+                // Clone the content and inject inline styles for EMR compatibility
+                const clone = element.cloneNode(true) as HTMLElement;
+
+                // Apply inline styles to all elements for EMR compatibility
+                const baseStyle = 'font-family: Arial, sans-serif; font-size: 10pt;';
+                clone.style.cssText = baseStyle;
+
+                // Style all paragraphs
+                clone.querySelectorAll('p').forEach((p) => {
+                    (p as HTMLElement).style.cssText = `${baseStyle} margin: 6pt 0;`;
+                });
+
+                // Style all list items and lists with proper indentation
+                clone.querySelectorAll('ul, ol').forEach((list) => {
+                    (list as HTMLElement).style.cssText = `${baseStyle} margin-left: 24pt; padding-left: 0; margin-top: 6pt; margin-bottom: 6pt;`;
+                });
+
+                clone.querySelectorAll('li').forEach((li) => {
+                    (li as HTMLElement).style.cssText = `${baseStyle} margin: 3pt 0;`;
+                });
+
+                // Style headings
+                clone.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach((h) => {
+                    (h as HTMLElement).style.cssText = `${baseStyle} font-weight: bold; margin-top: 12pt; margin-bottom: 6pt;`;
+                });
+
+                // Style strong/bold
+                clone.querySelectorAll('strong, b').forEach((s) => {
+                    (s as HTMLElement).style.cssText = `${baseStyle} font-weight: bold;`;
+                });
+
+                const html = clone.innerHTML;
+                const text = element.innerText;
+
+                // Create a ClipboardItem with both HTML and plain text
+                const blob = new Blob([`<div style="${baseStyle}">${html}</div>`], { type: 'text/html' });
+                const textBlob = new Blob([text], { type: 'text/plain' });
+
+                await navigator.clipboard.write([
+                    new ClipboardItem({
+                        'text/html': blob,
+                        'text/plain': textBlob,
+                    })
+                ]);
+                toast.success(`${label} copied with formatting`);
+                return true;
+            } catch (err) {
+                console.error('[TimelineEntry] Rich copy failed, falling back:', err);
+            }
+        }
+
+        // Fallback to plain text
+        if (plainTextFallback) {
+            try {
+                await navigator.clipboard.writeText(plainTextFallback);
+                toast.success(`${label} copied to clipboard (plain text)`);
+                return true;
+            } catch (err) {
+                console.error('[TimelineEntry] Fallback copy failed:', err);
+            }
+        }
+        return false;
+    };
+
+    const handleCopyNote = async (e: React.MouseEvent) => {
         e.stopPropagation(); // Prevent card expansion
         const noteArtifact = encounter.artifacts.find(a => a.artifact_type === 'INTERNAL_NOTE');
         const latestNoteVersion = noteArtifact?.versions.find(v => v.version_number === noteArtifact.current_version) || noteArtifact?.versions[0];
         const content = latestNoteVersion?.content || '';
         
         if (content) {
-            navigator.clipboard.writeText(content);
-            setCopiedNote(true);
-            setTimeout(() => setCopiedNote(false), 2000);
+            const success = await copyRichText(noteRef.current, content, 'Note');
+            if (success) {
+                setCopiedNote(true);
+                setTimeout(() => setCopiedNote(false), 2000);
+            }
         }
     };
 
-    const handleCopyLetter = (e: React.MouseEvent) => {
+    const handleCopyLetter = async (e: React.MouseEvent) => {
         e.stopPropagation(); // Prevent card expansion
         const letterArtifact = encounter.artifacts.find(a => a.artifact_type === 'REFERRER_LETTER');
         const latestLetterVersion = letterArtifact?.versions.find(v => v.version_number === letterArtifact.current_version) || letterArtifact?.versions[0];
         const content = latestLetterVersion?.content || '';
         
         if (content) {
-            navigator.clipboard.writeText(content);
-            setCopiedLetter(true);
-            setTimeout(() => setCopiedLetter(false), 2000);
+            const success = await copyRichText(letterRef.current, content, 'Letter');
+            if (success) {
+                setCopiedLetter(true);
+                setTimeout(() => setCopiedLetter(false), 2000);
+            }
         }
     };
 
@@ -107,6 +183,14 @@ export function TimelineEntry({ encounter, isLast }: TimelineEntryProps) {
     const hasTranscript = encounter.artifacts.some(a => a.artifact_type === 'RAW_TRANSCRIPT' && a.versions.length > 0);
     const hasNotes = encounter.artifacts.some(a => a.artifact_type === 'INTERNAL_NOTE' && a.versions.length > 0);
     const hasLetters = encounter.artifacts.some(a => a.artifact_type === 'REFERRER_LETTER' && a.versions.length > 0);
+
+    const noteArtifact = encounter.artifacts.find(a => a.artifact_type === 'INTERNAL_NOTE');
+    const latestNoteVersion = noteArtifact?.versions.find(v => v.version_number === noteArtifact.current_version) || noteArtifact?.versions[0];
+    const noteContent = latestNoteVersion?.content || '';
+
+    const letterArtifact = encounter.artifacts.find(a => a.artifact_type === 'REFERRER_LETTER');
+    const latestLetterVersion = letterArtifact?.versions.find(v => v.version_number === letterArtifact.current_version) || letterArtifact?.versions[0];
+    const letterContent = latestLetterVersion?.content || '';
 
     if (!isExpanded) {
         // Collapsed view - compact card
@@ -216,6 +300,20 @@ export function TimelineEntry({ encounter, isLast }: TimelineEntryProps) {
                         </div>
                     </CardHeader>
                 </Card>
+
+                {/* Hidden container for copying with rich formatting */}
+                <div style={{ position: 'absolute', left: '-9999px', top: '-9999px', opacity: 0, pointerEvents: 'none' }}>
+                    {hasNotes && (
+                        <div ref={noteRef}>
+                            <ReactMarkdown>{noteContent}</ReactMarkdown>
+                        </div>
+                    )}
+                    {hasLetters && (
+                        <div ref={letterRef}>
+                            <ReactMarkdown>{letterContent}</ReactMarkdown>
+                        </div>
+                    )}
+                </div>
             </div>
         );
     }
