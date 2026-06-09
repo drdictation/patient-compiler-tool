@@ -120,7 +120,7 @@ export function GlobalScanButton({ patientId, asMobileButton = false }: GlobalSc
                 <SelectContent>
                     <SelectItem value="gemini-flash">Gemini 2.5 Flash</SelectItem>
                     <SelectItem value="gemini-flash-lite">Gemini 3.1 Flash-Lite</SelectItem>
-                    <SelectItem value="groq-llama-4">Llama 4 Maverick</SelectItem>
+                    <SelectItem value="groq-llama-4">Llama 4 Scout</SelectItem>
                     <SelectItem value="groq-gpt-oss">GPT-OSS 120B</SelectItem>
                     <SelectItem value="groq-llama-3">Llama 3 70B</SelectItem>
                 </SelectContent>
@@ -140,4 +140,3 @@ export function GlobalScanButton({ patientId, asMobileButton = false }: GlobalSc
         </div>
     );
 }
-

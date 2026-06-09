@@ -199,7 +199,7 @@ export function InvestigationsPanel({ patientId, investigations: initialInvestig
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="gemini-flash">Gemini 2.5 Flash</SelectItem>
-                                <SelectItem value="groq-llama-4">Llama 4 Maverick</SelectItem>
+                                <SelectItem value="groq-llama-4">Llama 4 Scout</SelectItem>
                                 <SelectItem value="groq-gpt-oss">GPT-OSS 120B</SelectItem>
                             </SelectContent>
                         </Select>

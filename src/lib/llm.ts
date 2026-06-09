@@ -26,14 +26,33 @@ interface ExtractionOptions {
     purpose?: string;
 }
 
+interface ExtractionResponse {
+    issues: any[];
+    investigations: any[];
+    interventions: any[];
+    tasks: any[];
+    usage: {
+        input_tokens: number;
+        output_tokens: number;
+    };
+    cost: number;
+}
+
 const PRICING = {
     'gemini-flash': { input: 0.15, output: 1.25 }, // Gemini 2.5 Flash
     'gemini-flash-lite': { input: 0.05, output: 0.20 }, // Gemini 3.1 Flash-Lite
     'gemini-3.0-flash': { input: 0.25, output: 1.50 }, // Gemini 3.0 Flash (New)
     'groq-gpt-oss': { input: 0.15, output: 0.60 }, // GPT OSS 120B
-    'groq-llama-4': { input: 0.20, output: 0.60 }, // Llama 4 Maverick
+    'groq-llama-4': { input: 0.20, output: 0.60 }, // Llama 4 Scout
     'groq-llama-3': { input: 0.59, output: 0.79 }, // Llama 3 70B (approx standard)
 };
+
+function getGroqModel(provider: LLMProvider): string {
+    if (provider === 'groq-llama-3') return 'llama3-70b-8192';
+    if (provider === 'groq-gpt-oss') return 'openai/gpt-oss-120b';
+    if (provider === 'groq-llama-4') return 'meta-llama/llama-4-scout-17b-16e-instruct';
+    return 'llama3-70b-8192';
+}
 
 function calculateCost(provider: LLMProvider, input: number, output: number): number {
     const rates = PRICING[provider] || { input: 0, output: 0 };
@@ -113,17 +132,17 @@ export async function extractCuratedIssues(opts: ExtractionOptions): Promise<Ext
 
 async function callGemini(
     text: string,
-    provider: string,
+    provider: LLMProvider,
     systemPrompt: string,
     patientId?: string,
     purpose: string = 'generic'
-): Promise<any> {
+): Promise<ExtractionResponse> {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error('Missing GEMINI_API_KEY');
 
     let model = 'gemini-2.5-flash';
     if (provider === 'gemini-flash-lite') model = 'gemini-3.1-flash-lite-preview';
-    if (provider === 'gemini-3.0-flash') model = 'gemini-2.0-flash'; // 3.0 uses 2.0 endpoint currently
+    if (provider === 'gemini-3.0-flash') model = 'gemini-3-flash-preview';
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
@@ -225,22 +244,16 @@ async function callGemini(
 
 async function callGroq(
     text: string,
-    provider: string,
+    provider: LLMProvider,
     systemPrompt: string,
     patientId?: string,
     purpose: string = 'generic'
-): Promise<any> {
+): Promise<ExtractionResponse> {
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) throw new Error('Missing GROQ_API_KEY');
-
-    let model = 'llama3-70b-8192'; // fallback
-    if (provider === 'groq-llama-3') model = 'llama3-70b-8192';
-    if (provider === 'groq-gpt-oss') model = 'openai/gpt-oss-120b';
-    if (provider === 'groq-llama-4') model = 'meta-llama/llama-4-maverick-17b-128e-instruct';
+    const model = getGroqModel(provider);
 
     const startTime = Date.now();
-    let success = false;
-    let errorMessage = undefined;
     let inputTokens = 0;
     let outputTokens = 0;
 
@@ -273,8 +286,6 @@ async function callGroq(
         outputTokens = usage.completion_tokens || 0;
 
         const items = await parseGroqResponse(content);
-        success = true;
-
         const cost = calculateCost(provider as LLMProvider, inputTokens, outputTokens);
 
         // Log success
@@ -299,9 +310,6 @@ async function callGroq(
             cost: cost
         };
     } catch (e: any) {
-        success = false;
-        errorMessage = e.message;
-
         void logLLMCall({
             provider: 'groq',
             model: model,
@@ -312,10 +320,90 @@ async function callGroq(
             cost_usd: 0,
             latency_ms: Date.now() - startTime,
             success: false,
-            error_message: errorMessage
+            error_message: e.message
         });
 
         throw e;
+    }
+}
+
+async function callOpenRouterGroq(
+    text: string,
+    provider: LLMProvider,
+    systemPrompt: string,
+    patientId: string | undefined,
+    purpose: string
+): Promise<ExtractionResponse> {
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    if (!apiKey || !provider.startsWith('groq')) throw new Error('Missing OPENROUTER_API_KEY');
+
+    const model = getGroqModel(provider);
+    const startTime = Date.now();
+
+    try {
+        const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model,
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: text }
+                ],
+                response_format: { type: 'json_object' }
+            })
+        });
+
+        if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(`OpenRouter API Error (${model}): ${res.status} ${errText}`);
+        }
+
+        const data = await res.json();
+        const content = data.choices?.[0]?.message?.content;
+        const usage = data.usage || {};
+        const inputTokens = usage.prompt_tokens || 0;
+        const outputTokens = usage.completion_tokens || 0;
+        const items = await parseGroqResponse(content);
+        const cost = calculateCost(provider, inputTokens, outputTokens);
+
+        void logLLMCall({
+            provider: 'openrouter',
+            model,
+            purpose: `${purpose}_fallback`,
+            patient_id: patientId,
+            tokens_in: inputTokens,
+            tokens_out: outputTokens,
+            cost_usd: cost,
+            latency_ms: Date.now() - startTime,
+            success: true
+        });
+
+        return {
+            issues: items,
+            investigations: items,
+            interventions: items,
+            tasks: items,
+            usage: { input_tokens: inputTokens, output_tokens: outputTokens },
+            cost
+        };
+    } catch (fallbackError: any) {
+        void logLLMCall({
+            provider: 'openrouter',
+            model,
+            purpose: `${purpose}_fallback`,
+            patient_id: patientId,
+            tokens_in: 0,
+            tokens_out: 0,
+            cost_usd: 0,
+            latency_ms: Date.now() - startTime,
+            success: false,
+            error_message: fallbackError.message
+        });
+        throw fallbackError;
     }
 }
 
@@ -397,12 +485,41 @@ async function extractGeneric<T>(
     patientId?: string,
     purpose: string = 'generic'
 ): Promise<T> {
-    if (provider.startsWith('gemini')) {
-        return await callGemini(text, provider, systemPrompt, patientId, purpose) as T;
-    } else if (provider.startsWith('groq')) {
-        return await callGroq(text, provider, systemPrompt, patientId, purpose) as T;
+    const chain = getFallbackChain(provider);
+    let lastError: Error | null = null;
+
+    for (let i = 0; i < chain.length; i++) {
+        const attempt = chain[i];
+        const attemptPurpose = i === 0 ? purpose : `${purpose}_fallback_${i}`;
+
+        try {
+            if (attempt === 'openrouter-groq') {
+                return await callOpenRouterGroq(text, provider, systemPrompt, patientId, attemptPurpose) as T;
+            }
+
+            if (attempt.startsWith('gemini')) {
+                return await callGemini(text, attempt, systemPrompt, patientId, attemptPurpose) as T;
+            }
+
+            return await callGroq(text, attempt, systemPrompt, patientId, attemptPurpose) as T;
+        } catch (e: any) {
+            lastError = e;
+        }
     }
-    throw new Error(`Unsupported provider: ${provider}`);
+
+    throw lastError || new Error(`Unsupported provider: ${provider}`);
+}
+
+function getFallbackChain(provider: LLMProvider): Array<LLMProvider | 'openrouter-groq'> {
+    if (provider.startsWith('groq')) {
+        return [provider, 'gemini-3.0-flash', 'openrouter-groq'];
+    }
+
+    if (provider === 'gemini-3.0-flash') {
+        return ['gemini-3.0-flash', 'groq-llama-4', 'openrouter-groq'];
+    }
+
+    return [provider, 'groq-llama-4', 'openrouter-groq'];
 }
 
 // ========== INTERVENTIONS ==========
