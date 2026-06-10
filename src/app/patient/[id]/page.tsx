@@ -19,6 +19,8 @@ import { PatientMobileActions } from '@/components/patient-mobile-actions';
 import { TasksPanel } from '@/components/tasks-panel';
 import { GlobalSearch } from '@/components/global-search';
 import { AddPatientDialog } from '@/components/add-patient-dialog';
+import { CreateDocumentDialog } from '@/components/create-document-dialog';
+import { TranscriptsPanel } from '@/components/transcripts-panel';
 import { notFound } from 'next/navigation';
 
 export const dynamic = 'force-dynamic';
@@ -81,6 +83,11 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                     <AddNoteDialog patientId={patient.id} />
                     <SmartNoteDialog patientId={patient.id} patientName={patient.display_name} mode="quick-record" />
                     <SmartNoteDialog patientId={patient.id} patientName={patient.display_name} mode="standard" />
+                    <CreateDocumentDialog
+                        patientId={patient.id}
+                        patientName={patient.display_name}
+                        encounters={timeline.map(e => ({ id: e.id, encounter_date: e.encounter_date }))}
+                    />
                     <Separator orientation="vertical" className="h-6" />
                     <AddPatientDialog />
                     <GlobalSearch />
@@ -144,9 +151,17 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                                         key={encounter.id}
                                         encounter={encounter}
                                         isLast={index === timeline.length - 1}
+                                        patientId={patient.id}
+                                        patientName={patient.display_name}
+                                        allEncounters={timeline.map(e => ({ id: e.id, encounter_date: e.encounter_date }))}
                                     />
                                 ))}
                             </div>
+                        </section>
+
+                        {/* SAVED TRANSCRIPTS */}
+                        <section id="transcripts">
+                            <TranscriptsPanel patientName={patient.display_name} timeline={timeline} />
                         </section>
 
                         {/* PRE-VISIT BRIEF */}

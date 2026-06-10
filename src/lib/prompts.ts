@@ -16,6 +16,8 @@ import { FUNCTIONAL_NEW_LETTER } from './prompts/functional-new-letter';
 import { FUNCTIONAL_REVIEW_LETTER } from './prompts/functional-review-letter';
 import { OESOPHAGEAL_NEW_LETTER } from './prompts/oesophageal-new-letter';
 import { EOE_NEW_LETTER } from './prompts/eoe-new-letter';
+import { OUTBOUND_REFERRAL_LETTER } from './prompts/outbound-referral-letter';
+import { PATIENT_SUMMARY } from './prompts/patient-summary';
 
 export const PROMPTS = {
     NEW_CONSULT_NOTE,
@@ -27,7 +29,9 @@ export const PROMPTS = {
     FUNCTIONAL_NEW_LETTER,
     FUNCTIONAL_REVIEW_LETTER,
     OESOPHAGEAL_NEW_LETTER,
-    EOE_NEW_LETTER
+    EOE_NEW_LETTER,
+    OUTBOUND_REFERRAL_LETTER,
+    PATIENT_SUMMARY
 };
 
 export type LetterTemplateType = 'general' | 'ibd' | 'functional' | 'oesophageal' | 'eoe';

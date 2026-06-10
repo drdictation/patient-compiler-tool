@@ -36,7 +36,7 @@ export interface TimelineEncounter {
     }>;
     artifacts: Array<{
         id: string;
-        artifact_type: 'RAW_TRANSCRIPT' | 'INTERNAL_NOTE' | 'REFERRER_LETTER';
+        artifact_type: 'RAW_TRANSCRIPT' | 'INTERNAL_NOTE' | 'REFERRER_LETTER' | 'REFERRAL_LETTER' | 'PATIENT_SUMMARY';
         current_version: number;
         versions: Array<{
             version_number: number;

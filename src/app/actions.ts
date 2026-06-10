@@ -529,7 +529,7 @@ async function ensureEncounter(patientId: string, date: string): Promise<string>
  */
 async function saveArtifact(
     encounterId: string,
-    artifactType: 'RAW_TRANSCRIPT' | 'INTERNAL_NOTE' | 'REFERRER_LETTER',
+    artifactType: 'RAW_TRANSCRIPT' | 'INTERNAL_NOTE' | 'REFERRER_LETTER' | 'REFERRAL_LETTER' | 'PATIENT_SUMMARY',
     content: string
 ): Promise<string> {
     // Check for existing artifact
@@ -1090,5 +1090,220 @@ export async function getLatestPatientArtifact(
     } catch (e) {
         console.error('Failed to get latest patient artifact:', e);
         return null;
+    }
+}
+
+export interface AdditionalDocumentOptions {
+    patientId: string;
+    encounterId: string;
+    documentType: 'referral_letter' | 'patient_summary';
+    clinicianType?: string;
+    additionalContext?: string;
+    includePatientHistory: boolean;
+    model: SmartNoteModel;
+}
+
+/**
+ * Generates an outbound referral letter or a patient summary from a consult's transcripts/notes,
+ * with an option to include the history from up to 3 past consults for context.
+ */
+export async function generateAdditionalDocument(
+    options: AdditionalDocumentOptions
+): Promise<{ success: boolean; artifactId?: string; error?: string }> {
+    const { patientId, encounterId, documentType, clinicianType, additionalContext, includePatientHistory, model } = options;
+    try {
+        // 1. Fetch patient display name
+        const { data: patient } = await supabase
+            .from('canonical_patient')
+            .select('display_name')
+            .eq('id', patientId)
+            .single();
+
+        const patientName = patient?.display_name || 'Unknown Patient';
+
+        // 2. Fetch the target encounter and existing records
+        const { data: encounter } = await supabase
+            .from('encounter')
+            .select('*')
+            .eq('id', encounterId)
+            .single();
+
+        if (!encounter) {
+            return { success: false, error: 'Encounter not found' };
+        }
+
+        let formattedDate: string = encounter.encounter_date;
+        try {
+            const parts = encounter.encounter_date.split('-');
+            if (parts.length === 3) {
+                const year = parts[0];
+                const monthIndex = parseInt(parts[1], 10) - 1;
+                const day = parseInt(parts[2], 10);
+                const monthNames = [
+                    "January", "February", "March", "April", "May", "June", 
+                    "July", "August", "September", "October", "November", "December"
+                ];
+                if (monthIndex >= 0 && monthIndex < 12) {
+                    formattedDate = `${day} ${monthNames[monthIndex]} ${year}`;
+                }
+            }
+        } catch (e) {
+            console.error('Failed to parse encounter date:', encounter.encounter_date, e);
+        }
+
+        // Fetch current encounter artifacts
+        const { data: currentArtifacts } = await supabase
+            .from('artifact')
+            .select(`
+                *,
+                versions:artifact_version(*)
+            `)
+            .eq('encounter_id', encounterId);
+
+        // Fetch current encounter source records
+        const { data: sourceRecords } = await supabase
+            .from('source_record_cache')
+            .select('*')
+            .eq('canonical_patient_id', patientId)
+            .eq('consult_date', encounter.encounter_date);
+
+        // 3. Compile current consult details
+        let consultDetails = '';
+        const transcriptArt = currentArtifacts?.find(a => a.artifact_type === 'RAW_TRANSCRIPT');
+        if (transcriptArt) {
+            const latest = transcriptArt.versions.find((v: any) => v.version_number === transcriptArt.current_version) || transcriptArt.versions[0];
+            if (latest?.content) {
+                consultDetails += `Consult Transcript:\n${latest.content}\n\n`;
+            }
+        }
+
+        const noteArt = currentArtifacts?.find(a => a.artifact_type === 'INTERNAL_NOTE');
+        if (noteArt) {
+            const latest = noteArt.versions.find((v: any) => v.version_number === noteArt.current_version) || noteArt.versions[0];
+            if (latest?.content) {
+                consultDetails += `Consult Note:\n${latest.content}\n\n`;
+            }
+        }
+
+        const letterArt = currentArtifacts?.find(a => a.artifact_type === 'REFERRER_LETTER');
+        if (letterArt) {
+            const latest = letterArt.versions.find((v: any) => v.version_number === letterArt.current_version) || letterArt.versions[0];
+            if (latest?.content) {
+                consultDetails += `Referrer Letter:\n${latest.content}\n\n`;
+            }
+        }
+
+        if (sourceRecords && sourceRecords.length > 0) {
+            consultDetails += `Source Dictations:\n`;
+            sourceRecords.forEach((r: any) => {
+                if (r.transcription) {
+                    consultDetails += `- ${r.transcription}\n`;
+                }
+            });
+        }
+
+        if (!consultDetails.trim()) {
+            consultDetails = 'No consult text or transcript is currently saved for this encounter.';
+        }
+
+        // 4. Compile patient history if requested (max 3 past consult entries)
+        let historyText = 'No previous consult history was requested or available.';
+        if (includePatientHistory) {
+            const { data: pastEncounters } = await supabase
+                .from('encounter')
+                .select('id, encounter_date')
+                .eq('canonical_patient_id', patientId)
+                .neq('id', encounterId)
+                .order('encounter_date', { ascending: false })
+                .limit(3);
+
+            if (pastEncounters && pastEncounters.length > 0) {
+                const pastEncounterIds = pastEncounters.map(e => e.id);
+                const { data: pastArtifacts } = await supabase
+                    .from('artifact')
+                    .select(`
+                        id,
+                        encounter_id,
+                        artifact_type,
+                        current_version,
+                        versions:artifact_version(*)
+                    `)
+                    .in('encounter_id', pastEncounterIds)
+                    .in('artifact_type', ['INTERNAL_NOTE', 'REFERRER_LETTER', 'REFERRAL_LETTER']);
+
+                if (pastArtifacts && pastArtifacts.length > 0) {
+                    const formattedPast = pastEncounters.map(enc => {
+                        const dateStr = new Date(enc.encounter_date).toLocaleDateString('en-AU', {
+                            day: 'numeric', month: 'short', year: 'numeric'
+                        });
+                        const encArts = pastArtifacts.filter(a => a.encounter_id === enc.id);
+                        if (encArts.length === 0) return '';
+
+                        let encText = `Consult on ${dateStr}:\n`;
+                        encArts.forEach(art => {
+                            const latest = art.versions.find((v: any) => v.version_number === art.current_version) || art.versions[0];
+                            if (latest?.content) {
+                                const typeLabel = art.artifact_type === 'INTERNAL_NOTE' ? 'Consult Note'
+                                    : art.artifact_type === 'REFERRER_LETTER' ? 'Referrer Letter'
+                                    : 'Referral Letter (Outbound)';
+                                encText += `[${typeLabel}]\n${latest.content}\n`;
+                            }
+                        });
+                        return encText;
+                    }).filter(Boolean).join('\n---\n\n');
+
+                    if (formattedPast.trim()) {
+                        historyText = formattedPast;
+                    }
+                }
+            }
+        }
+
+        // 5. Select prompt and replace fields
+        let promptTemplate = '';
+        let targetArtifactType: 'REFERRAL_LETTER' | 'PATIENT_SUMMARY';
+
+        if (documentType === 'referral_letter') {
+            const { OUTBOUND_REFERRAL_LETTER } = await import('@/lib/prompts/outbound-referral-letter');
+            promptTemplate = OUTBOUND_REFERRAL_LETTER
+                .replaceAll('{{CLINICIAN_TYPE}}', clinicianType || 'Specialist')
+                .replaceAll('{{PATIENT_HISTORY}}', historyText);
+            targetArtifactType = 'REFERRAL_LETTER';
+        } else {
+            const { PATIENT_SUMMARY } = await import('@/lib/prompts/patient-summary');
+            promptTemplate = PATIENT_SUMMARY;
+            targetArtifactType = 'PATIENT_SUMMARY';
+        }
+
+        const fullPrompt = promptTemplate
+            .replaceAll('{{PATIENT_NAME}}', patientName)
+            .replaceAll('{{TRANSCRIPT}}', consultDetails)
+            .replaceAll('{{ADDITIONAL_CONTEXT}}', additionalContext || 'None provided.');
+
+        // 6. Generate content via Gemini
+        const { content } = await generateFromPrompt(
+            consultDetails,
+            patientName,
+            fullPrompt,
+            model,
+            patientId,
+            `additional_doc_${documentType}`,
+            formattedDate
+        );
+
+        if (!content) {
+            return { success: false, error: 'Model generated empty content.' };
+        }
+
+        // 7. Save artifact
+        const artifactId = await saveArtifact(encounterId, targetArtifactType, content);
+
+        revalidatePath('/patient/[id]');
+        revalidatePath('/');
+
+        return { success: true, artifactId };
+    } catch (err: any) {
+        console.error('Failed to generate additional document:', err);
+        return { success: false, error: err.message || 'Generation failed' };
     }
 }

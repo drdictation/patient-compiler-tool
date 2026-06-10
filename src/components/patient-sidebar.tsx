@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import {
-    AlertCircle, Microscope, Pill, Calendar, FileText, ChevronRight
+    AlertCircle, Microscope, Pill, Calendar, FileText, ChevronRight, ScrollText
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -19,6 +19,7 @@ interface PatientSidebarProps {
 
 const navItems = [
     { id: 'timeline', label: 'Timeline', icon: Calendar },
+    { id: 'transcripts', label: 'Saved Transcripts', icon: ScrollText },
     { id: 'brief', label: 'Pre-Visit Brief', icon: FileText },
     { id: 'tasks', label: 'Tasks', icon: FileText },
     { id: 'issues', label: 'Issues', icon: AlertCircle },

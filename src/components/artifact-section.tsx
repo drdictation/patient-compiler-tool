@@ -18,14 +18,14 @@ interface Version {
 
 interface Artifact {
     id: string;
-    artifact_type: 'RAW_TRANSCRIPT' | 'INTERNAL_NOTE' | 'REFERRER_LETTER';
+    artifact_type: 'RAW_TRANSCRIPT' | 'INTERNAL_NOTE' | 'REFERRER_LETTER' | 'REFERRAL_LETTER' | 'PATIENT_SUMMARY';
     current_version: number;
     versions: Version[];
 }
 
 interface ArtifactSectionProps {
     encounterId: string;
-    type: 'RAW_TRANSCRIPT' | 'INTERNAL_NOTE' | 'REFERRER_LETTER';
+    type: 'RAW_TRANSCRIPT' | 'INTERNAL_NOTE' | 'REFERRER_LETTER' | 'REFERRAL_LETTER' | 'PATIENT_SUMMARY';
     initialArtifact?: Artifact;
     readOnly?: boolean;
 }
@@ -61,8 +61,16 @@ export function ArtifactSection({ encounterId, type, initialArtifact, readOnly =
 
     const currentVersionContent = initialArtifact?.versions.find(v => v.version_number === initialArtifact.current_version)?.content;
     const hasContent = !!initialArtifact;
-    const label = type === 'RAW_TRANSCRIPT' ? 'Transcript' : type === 'INTERNAL_NOTE' ? 'Internal Note' : 'Referrer Letter';
-    const Icon = type === 'RAW_TRANSCRIPT' ? ScrollText : type === 'INTERNAL_NOTE' ? FileText : Mail;
+    const label = type === 'RAW_TRANSCRIPT' ? 'Transcript' 
+        : type === 'INTERNAL_NOTE' ? 'Internal Note' 
+        : type === 'REFERRER_LETTER' ? 'Referrer Letter'
+        : type === 'REFERRAL_LETTER' ? 'Referral Letter (Outbound)'
+        : 'Patient Summary';
+    const Icon = type === 'RAW_TRANSCRIPT' ? ScrollText 
+        : type === 'INTERNAL_NOTE' ? FileText 
+        : type === 'REFERRER_LETTER' ? Mail
+        : type === 'REFERRAL_LETTER' ? Mail
+        : FileText;
 
     const handleCopy = async () => {
         if (contentRef.current) {

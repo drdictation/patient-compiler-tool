@@ -5,10 +5,11 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
-    Calendar, ChevronDown, ChevronUp, FileText, Mic, MessageSquare, ScrollText, Check
+    Calendar, ChevronDown, ChevronUp, FileText, Mic, MessageSquare, ScrollText, Check, Mail
 } from 'lucide-react';
 import { SourceRecordCard } from '@/components/source-record-card';
 import { ArtifactSection } from '@/components/artifact-section';
+import { CreateDocumentDialog } from '@/components/create-document-dialog';
 import ReactMarkdown from 'react-markdown';
 import { toast } from 'sonner';
 
@@ -28,7 +29,7 @@ interface Version {
 
 interface Artifact {
     id: string;
-    artifact_type: 'RAW_TRANSCRIPT' | 'INTERNAL_NOTE' | 'REFERRER_LETTER';
+    artifact_type: 'RAW_TRANSCRIPT' | 'INTERNAL_NOTE' | 'REFERRER_LETTER' | 'REFERRAL_LETTER' | 'PATIENT_SUMMARY';
     current_version: number;
     versions: Version[];
 }
@@ -43,6 +44,9 @@ interface Encounter {
 interface TimelineEntryProps {
     encounter: Encounter;
     isLast: boolean;
+    patientId: string;
+    patientName: string;
+    allEncounters: Array<{ id: string; encounter_date: string }>;
 }
 
 function generateSummary(encounter: Encounter): string {
@@ -67,10 +71,11 @@ function generateSummary(encounter: Encounter): string {
     // Default
     return 'Clinical encounter recorded.';
 }
-export function TimelineEntry({ encounter, isLast }: TimelineEntryProps) {
+export function TimelineEntry({ encounter, isLast, patientId, patientName, allEncounters }: TimelineEntryProps) {
     const [isExpanded, setIsExpanded] = useState(false);
     const [copiedNote, setCopiedNote] = useState(false);
     const [copiedLetter, setCopiedLetter] = useState(false);
+    const [copiedTranscript, setCopiedTranscript] = useState(false);
 
     const noteRef = useRef<HTMLDivElement>(null);
     const letterRef = useRef<HTMLDivElement>(null);
@@ -172,6 +177,25 @@ export function TimelineEntry({ encounter, isLast }: TimelineEntryProps) {
         }
     };
 
+    const handleCopyTranscript = async (e: React.MouseEvent) => {
+        e.stopPropagation(); // Prevent card expansion
+        const transcriptArtifact = encounter.artifacts.find(a => a.artifact_type === 'RAW_TRANSCRIPT');
+        const latestVersion = transcriptArtifact?.versions.find(v => v.version_number === transcriptArtifact.current_version) || transcriptArtifact?.versions[0];
+        const content = latestVersion?.content || '';
+        
+        if (content) {
+            try {
+                await navigator.clipboard.writeText(content);
+                toast.success('Transcript copied to clipboard');
+                setCopiedTranscript(true);
+                setTimeout(() => setCopiedTranscript(false), 2000);
+            } catch (err) {
+                console.error('[TimelineEntry] Copy transcript failed:', err);
+                toast.error('Failed to copy transcript');
+            }
+        }
+    };
+
     const date = new Date(encounter.encounter_date);
     const formattedDate = date.toLocaleDateString('en-US', {
         month: 'short', day: 'numeric', year: 'numeric'
@@ -183,6 +207,8 @@ export function TimelineEntry({ encounter, isLast }: TimelineEntryProps) {
     const hasTranscript = encounter.artifacts.some(a => a.artifact_type === 'RAW_TRANSCRIPT' && a.versions.length > 0);
     const hasNotes = encounter.artifacts.some(a => a.artifact_type === 'INTERNAL_NOTE' && a.versions.length > 0);
     const hasLetters = encounter.artifacts.some(a => a.artifact_type === 'REFERRER_LETTER' && a.versions.length > 0);
+    const hasReferrals = encounter.artifacts.some(a => a.artifact_type === 'REFERRAL_LETTER' && a.versions.length > 0);
+    const hasSummaries = encounter.artifacts.some(a => a.artifact_type === 'PATIENT_SUMMARY' && a.versions.length > 0);
 
     const noteArtifact = encounter.artifacts.find(a => a.artifact_type === 'INTERNAL_NOTE');
     const latestNoteVersion = noteArtifact?.versions.find(v => v.version_number === noteArtifact.current_version) || noteArtifact?.versions[0];
@@ -220,16 +246,16 @@ export function TimelineEntry({ encounter, isLast }: TimelineEntryProps) {
                                         {recordCount} dictation{recordCount > 1 ? 's' : ''}
                                     </Badge>
                                 )}
-                                {hasNotes && (
-                                    <Badge variant="secondary" className="text-[10px] h-5 bg-blue-50 text-blue-700">
-                                        <FileText className="h-2.5 w-2.5 mr-1" />
-                                        Notes
-                                    </Badge>
-                                )}
                                 {hasTranscript && (
                                     <Badge variant="secondary" className="text-[10px] h-5 bg-amber-50 text-amber-700">
                                         <ScrollText className="h-2.5 w-2.5 mr-1" />
                                         Transcript
+                                    </Badge>
+                                )}
+                                {hasNotes && (
+                                    <Badge variant="secondary" className="text-[10px] h-5 bg-blue-50 text-blue-700">
+                                        <FileText className="h-2.5 w-2.5 mr-1" />
+                                        Notes
                                     </Badge>
                                 )}
                                 {hasLetters && (
@@ -238,10 +264,46 @@ export function TimelineEntry({ encounter, isLast }: TimelineEntryProps) {
                                         Letter
                                     </Badge>
                                 )}
+                                {hasReferrals && (
+                                    <Badge variant="secondary" className="text-[10px] h-5 bg-teal-50 text-teal-700">
+                                        <Mail className="h-2.5 w-2.5 mr-1" />
+                                        Referral
+                                    </Badge>
+                                )}
+                                {hasSummaries && (
+                                    <Badge variant="secondary" className="text-[10px] h-5 bg-emerald-50 text-emerald-700">
+                                        <FileText className="h-2.5 w-2.5 mr-1" />
+                                        Summary
+                                    </Badge>
+                                )}
                             </div>
                             <p className="text-sm text-slate-600 mt-1.5 line-clamp-2">{summary}</p>
                         </div>
                         <div className="flex items-center gap-2 ml-2 flex-shrink-0">
+                            {hasTranscript && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={handleCopyTranscript}
+                                    className={`h-7 px-2.5 gap-1.5 transition-all text-xs font-medium border-slate-200 shadow-sm ${
+                                        copiedTranscript 
+                                            ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-50 hover:text-green-700' 
+                                            : 'bg-white hover:bg-slate-50 hover:text-indigo-600'
+                                    }`}
+                                >
+                                    {copiedTranscript ? (
+                                        <>
+                                            <Check className="h-3.5 w-3.5 animate-pulse" />
+                                            <span>Copied</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <ScrollText className="h-3.5 w-3.5 text-slate-400 group-hover/card:text-indigo-500" />
+                                            <span>Copy Transcript</span>
+                                        </>
+                                    )}
+                                </Button>
+                            )}
                             {hasNotes && (
                                 <Button
                                     variant="outline"
@@ -339,15 +401,24 @@ export function TimelineEntry({ encounter, isLast }: TimelineEntryProps) {
                             <span className="text-slate-400 text-sm ml-2">{dayOfWeek}</span>
                         </div>
                     </div>
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setIsExpanded(false)}
-                        className="h-7 px-2 text-indigo-600 hover:text-indigo-800"
-                    >
-                        <ChevronUp className="h-4 w-4 mr-1" />
-                        Collapse
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        <CreateDocumentDialog
+                            patientId={patientId}
+                            patientName={patientName}
+                            encounters={allEncounters}
+                            defaultEncounterId={encounter.id}
+                            asIconButton
+                        />
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setIsExpanded(false)}
+                            className="h-7 px-2 text-indigo-600 hover:text-indigo-800"
+                        >
+                            <ChevronUp className="h-4 w-4 mr-1" />
+                            Collapse
+                        </Button>
+                    </div>
                 </CardHeader>
 
                 <CardContent className="py-4 px-4 space-y-4">
@@ -402,6 +473,30 @@ export function TimelineEntry({ encounter, isLast }: TimelineEntryProps) {
                             encounterId={encounter.id}
                             type="REFERRER_LETTER"
                             initialArtifact={encounter.artifacts.find(a => a.artifact_type === 'REFERRER_LETTER')}
+                        />
+                    </div>
+
+                    {/* REFERRAL LETTERS (OUTBOUND) */}
+                    <div className="space-y-3">
+                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                            Referral Letters (Outbound)
+                        </h4>
+                        <ArtifactSection
+                            encounterId={encounter.id}
+                            type="REFERRAL_LETTER"
+                            initialArtifact={encounter.artifacts.find(a => a.artifact_type === 'REFERRAL_LETTER')}
+                        />
+                    </div>
+
+                    {/* PATIENT SUMMARIES */}
+                    <div className="space-y-3">
+                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                            Patient Summaries
+                        </h4>
+                        <ArtifactSection
+                            encounterId={encounter.id}
+                            type="PATIENT_SUMMARY"
+                            initialArtifact={encounter.artifacts.find(a => a.artifact_type === 'PATIENT_SUMMARY')}
                         />
                     </div>
                 </CardContent>
