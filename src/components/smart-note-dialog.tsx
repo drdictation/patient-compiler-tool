@@ -688,6 +688,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                                             </>
                                         )}
                                     </SelectContent>
+                                </Select>
                             </div>
                         </div>
 
