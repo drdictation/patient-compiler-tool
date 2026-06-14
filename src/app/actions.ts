@@ -588,6 +588,30 @@ function getPronounDirective(pronouns?: 'auto' | 'he_him' | 'she_her' | 'they_th
     return `\n\nPRONOUN DIRECTIVE (CRITICAL): When referring to the patient (${patientName || 'the patient'}), you MUST use "${label}" pronouns. Do not guess or use other pronouns under any circumstance. Ensure all sentence structures and verb conjugations (e.g. "they are" vs "he is") are grammatically correct.`;
 }
 
+function formatSubtitlesAndSignoff(text: string): string {
+    if (!text) return text;
+
+    // Rule 1: Clean signoff "Senior Australian Gastroenterologist" in the last 50 words
+    const words = text.trim().split(/\s+/);
+    const last50Words = words.slice(-50).join(' ');
+    if (last50Words.toLowerCase().includes('senior australian gastroenterologist')) {
+        const searchStr = 'senior australian gastroenterologist';
+        const lastIndex = text.toLowerCase().lastIndexOf(searchStr);
+        if (lastIndex !== -1 && (text.length - lastIndex) < 400) {
+            const before = text.substring(0, lastIndex);
+            const after = text.substring(lastIndex + searchStr.length);
+            text = (before + after)
+                .replace(/,\s*$/, '') // trailing comma
+                .replace(/\n\s*\n\s*$/, '\n'); // trailing newlines
+        }
+    }
+
+    // Rule 2: Force bold subtitles to have paragraphs start on a new line
+    text = text.replace(/(^|\r?\n)(\*\*(?!Dear\b)[^*\r\n]+?\*\*(?::|\s)\s*)([A-Za-z0-9].*)/gi, '$1$2\n$3');
+
+    return text;
+}
+
 /**
  * Create Smart Note artifacts from a transcript.
  * Handles partial failures - if one generation fails, others still complete.
@@ -682,7 +706,7 @@ export async function createSmartNote(options: SmartNoteOptions): Promise<SmartN
                     prompt = prompt + getPronounDirective(outputs.pronouns, patientName);
                 }
 
-                const { content } = await generateFromPrompt(
+                let { content } = await generateFromPrompt(
                     transcript,
                     patientName,
                     prompt,
@@ -691,6 +715,7 @@ export async function createSmartNote(options: SmartNoteOptions): Promise<SmartN
                     'smart_note_letter',
                     formattedDate
                 );
+                content = formatSubtitlesAndSignoff(content);
                 result.letterArtifactId = await saveArtifact(encounterId, 'REFERRER_LETTER', content);
             } catch (e: any) {
                 result.errors.push(`Failed to generate letter: ${e.message}`);
@@ -1315,7 +1340,7 @@ export async function generateAdditionalDocument(
             .replaceAll('{{ADDITIONAL_CONTEXT}}', additionalContext || 'None provided.');
 
         // 6. Generate content via Gemini
-        const { content } = await generateFromPrompt(
+        let { content } = await generateFromPrompt(
             consultDetails,
             patientName,
             fullPrompt,
@@ -1327,6 +1352,10 @@ export async function generateAdditionalDocument(
 
         if (!content) {
             return { success: false, error: 'Model generated empty content.' };
+        }
+
+        if (documentType === 'referral_letter') {
+            content = formatSubtitlesAndSignoff(content);
         }
 
         // 7. Save artifact
