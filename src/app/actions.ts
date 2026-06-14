@@ -489,6 +489,7 @@ export interface SmartNoteOptions {
         generateLetter: boolean;
         letterType?: 'new' | 'review';
         templateType?: 'general' | 'ibd' | 'functional' | 'oesophageal' | 'eoe';
+        isComplex?: boolean;
     };
     model: SmartNoteModel;
 }
@@ -568,6 +569,15 @@ async function saveArtifact(
 
     return newArt.id;
 }
+
+const COMPLEXITY_DIRECTIVE = `
+CLINICAL COMPLEXITY DIRECTIVE (CRITICAL REQUIREMENT):
+This is a highly complex patient consult. The generated letter must reflect this complexity and be significantly more verbose, detailed, and explanatory than a standard summary. You MUST:
+1. Elaborate in detail on all physiological, pathological, and pathophysiological pathways discussed during the consultation.
+2. Detail any psychosocial complexities influencing the patient's presentation, coping mechanisms, or care plan.
+3. Fully capture medicolegal reasoning, discussions, and decision-making regarding investigations (Ix), treatment choices, and potential risks or alternatives discussed.
+4. Avoid aggressive summarization; write in an exhaustive, explanatory clinical style to ensure no nuance is lost.
+`;
 
 /**
  * Create Smart Note artifacts from a transcript.
@@ -655,7 +665,10 @@ export async function createSmartNote(options: SmartNoteOptions): Promise<SmartN
                 }
 
                 // @ts-ignore - access dynamically
-                const prompt = (PROMPTS as any)[promptKey] || PROMPTS.NEW_LETTER;
+                let prompt = (PROMPTS as any)[promptKey] || PROMPTS.NEW_LETTER;
+                if (outputs.isComplex) {
+                    prompt = prompt + "\n\n" + COMPLEXITY_DIRECTIVE;
+                }
 
                 const { content } = await generateFromPrompt(
                     transcript,
@@ -1101,6 +1114,7 @@ export interface AdditionalDocumentOptions {
     additionalContext?: string;
     includePatientHistory: boolean;
     model: SmartNoteModel;
+    isComplex?: boolean;
 }
 
 /**
@@ -1110,7 +1124,7 @@ export interface AdditionalDocumentOptions {
 export async function generateAdditionalDocument(
     options: AdditionalDocumentOptions
 ): Promise<{ success: boolean; artifactId?: string; error?: string }> {
-    const { patientId, encounterId, documentType, clinicianType, additionalContext, includePatientHistory, model } = options;
+    const { patientId, encounterId, documentType, clinicianType, additionalContext, includePatientHistory, model, isComplex } = options;
     try {
         // 1. Fetch patient display name
         const { data: patient } = await supabase
@@ -1265,7 +1279,11 @@ export async function generateAdditionalDocument(
 
         if (documentType === 'referral_letter') {
             const { OUTBOUND_REFERRAL_LETTER } = await import('@/lib/prompts/outbound-referral-letter');
-            promptTemplate = OUTBOUND_REFERRAL_LETTER
+            let template = OUTBOUND_REFERRAL_LETTER;
+            if (isComplex) {
+                template = template + "\n\n" + COMPLEXITY_DIRECTIVE;
+            }
+            promptTemplate = template
                 .replaceAll('{{CLINICIAN_TYPE}}', clinicianType || 'Specialist')
                 .replaceAll('{{PATIENT_HISTORY}}', historyText);
             targetArtifactType = 'REFERRAL_LETTER';

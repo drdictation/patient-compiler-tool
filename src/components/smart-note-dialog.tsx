@@ -22,6 +22,7 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Switch } from "@/components/ui/switch";
 import { Sparkles, Mic, Square, Loader2, Check, AlertCircle, FileText, Mail } from 'lucide-react';
 import { createSmartNote, SmartNoteOptions } from '@/app/actions';
 import { SmartNoteModel } from '@/lib/llm';
@@ -87,6 +88,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
     const [letterType, setLetterType] = useState<LetterType>('review');
     const [templateType, setTemplateType] = useState<TemplateType>('general');
     const [model, setModel] = useState<SmartNoteModel>('gemini-3-flash-preview');
+    const [isComplex, setIsComplex] = useState(false);
 
     // Generation status
     const [generationState, setGenerationState] = useState<GenerationState>({
@@ -273,6 +275,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         setLetterType('review');
         setTemplateType('general');
         setModel('gemini-3-flash-preview');
+        setIsComplex(false);
         setGenerationState({ transcript: 'idle', note: 'idle', letter: 'idle', tasks: 'idle' });
         setRecordingDuration(0);
         setAudioSizeMB(0);
@@ -319,7 +322,8 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                         generateNote,
                         generateLetter,
                         letterType: generateLetter ? letterType : undefined,
-                        templateType: generateLetter ? templateType : undefined
+                        templateType: generateLetter ? templateType : undefined,
+                        isComplex: generateLetter ? isComplex : undefined
                     },
                     model
                 };
@@ -684,8 +688,20 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                                             </>
                                         )}
                                     </SelectContent>
-                                </Select>
                             </div>
+                        </div>
+
+                        <div className="flex items-center justify-between border-t pt-3 mt-3">
+                            <div className="space-y-0.5">
+                                <Label htmlFor="complex-letter" className="font-semibold text-slate-700">Complex Case (Verbose Letter)</Label>
+                                <p className="text-[10px] text-slate-500">Appends detailed pathophysiological pathways, psychosocial complexities, and medicolegal reasoning to the letter</p>
+                            </div>
+                            <Switch
+                                id="complex-letter"
+                                checked={isComplex}
+                                onCheckedChange={setIsComplex}
+                                disabled={!generateLetter}
+                            />
                         </div>
                     </div>
 

@@ -63,6 +63,7 @@ export function CreateDocumentDialog({
     const [clinicianType, setClinicianType] = useState('');
     const [additionalContext, setAdditionalContext] = useState('');
     const [includePatientHistory, setIncludePatientHistory] = useState(false);
+    const [isComplex, setIsComplex] = useState(false);
     const [model, setModel] = useState<SmartNoteModel>('gemini-3-flash-preview');
 
     const handleGenerate = () => {
@@ -85,6 +86,7 @@ export function CreateDocumentDialog({
                     clinicianType: documentType === 'referral_letter' ? clinicianType.trim() : undefined,
                     additionalContext: additionalContext.trim() || undefined,
                     includePatientHistory: documentType === 'referral_letter' ? includePatientHistory : false,
+                    isComplex: documentType === 'referral_letter' ? isComplex : undefined,
                     model
                 });
 
@@ -110,6 +112,7 @@ export function CreateDocumentDialog({
         setClinicianType('');
         setAdditionalContext('');
         setIncludePatientHistory(false);
+        setIsComplex(false);
         setModel('gemini-3-flash-preview');
     };
 
@@ -227,6 +230,18 @@ export function CreateDocumentDialog({
                                         id="include-history"
                                         checked={includePatientHistory}
                                         onCheckedChange={setIncludePatientHistory}
+                                    />
+                                </div>
+
+                                <div className="flex items-center justify-between border-t pt-3">
+                                    <div className="space-y-0.5 pr-4">
+                                        <Label htmlFor="complex-letter" className="text-sm font-semibold text-slate-700">Complex Case (Verbose Letter)</Label>
+                                        <p className="text-[10px] text-slate-500">Appends detailed pathophysiological pathways, psychosocial complexities, and medicolegal reasoning to the letter</p>
+                                    </div>
+                                    <Switch
+                                        id="complex-letter"
+                                        checked={isComplex}
+                                        onCheckedChange={setIsComplex}
                                     />
                                 </div>
                             </div>
