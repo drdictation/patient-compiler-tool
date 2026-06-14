@@ -490,6 +490,7 @@ export interface SmartNoteOptions {
         letterType?: 'new' | 'review';
         templateType?: 'general' | 'ibd' | 'functional' | 'oesophageal' | 'eoe';
         isComplex?: boolean;
+        pronouns?: 'auto' | 'he_him' | 'she_her' | 'they_them';
     };
     model: SmartNoteModel;
 }
@@ -578,6 +579,14 @@ This is a highly complex patient consult. The generated letter must reflect this
 3. Fully capture medicolegal reasoning, discussions, and decision-making regarding investigations (Ix), treatment choices, and potential risks or alternatives discussed.
 4. Avoid aggressive summarization; write in an exhaustive, explanatory clinical style to ensure no nuance is lost.
 `;
+
+function getPronounDirective(pronouns?: 'auto' | 'he_him' | 'she_her' | 'they_them', patientName?: string): string {
+    if (!pronouns || pronouns === 'auto') return '';
+    const label = pronouns === 'he_him' ? 'he/him/his/himself' 
+                : pronouns === 'she_her' ? 'she/her/hers/herself' 
+                : 'they/them/theirs/themselves';
+    return `\n\nPRONOUN DIRECTIVE (CRITICAL): When referring to the patient (${patientName || 'the patient'}), you MUST use "${label}" pronouns. Do not guess or use other pronouns under any circumstance. Ensure all sentence structures and verb conjugations (e.g. "they are" vs "he is") are grammatically correct.`;
+}
 
 /**
  * Create Smart Note artifacts from a transcript.
@@ -668,6 +677,9 @@ export async function createSmartNote(options: SmartNoteOptions): Promise<SmartN
                 let prompt = (PROMPTS as any)[promptKey] || PROMPTS.NEW_LETTER;
                 if (outputs.isComplex) {
                     prompt = prompt + "\n\n" + COMPLEXITY_DIRECTIVE;
+                }
+                if (outputs.pronouns) {
+                    prompt = prompt + getPronounDirective(outputs.pronouns, patientName);
                 }
 
                 const { content } = await generateFromPrompt(
@@ -1115,6 +1127,7 @@ export interface AdditionalDocumentOptions {
     includePatientHistory: boolean;
     model: SmartNoteModel;
     isComplex?: boolean;
+    pronouns?: 'auto' | 'he_him' | 'she_her' | 'they_them';
 }
 
 /**
@@ -1124,7 +1137,7 @@ export interface AdditionalDocumentOptions {
 export async function generateAdditionalDocument(
     options: AdditionalDocumentOptions
 ): Promise<{ success: boolean; artifactId?: string; error?: string }> {
-    const { patientId, encounterId, documentType, clinicianType, additionalContext, includePatientHistory, model, isComplex } = options;
+    const { patientId, encounterId, documentType, clinicianType, additionalContext, includePatientHistory, model, isComplex, pronouns } = options;
     try {
         // 1. Fetch patient display name
         const { data: patient } = await supabase
@@ -1282,6 +1295,9 @@ export async function generateAdditionalDocument(
             let template = OUTBOUND_REFERRAL_LETTER;
             if (isComplex) {
                 template = template + "\n\n" + COMPLEXITY_DIRECTIVE;
+            }
+            if (pronouns) {
+                template = template + getPronounDirective(pronouns, patientName);
             }
             promptTemplate = template
                 .replaceAll('{{CLINICIAN_TYPE}}', clinicianType || 'Specialist')

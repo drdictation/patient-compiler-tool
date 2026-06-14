@@ -89,6 +89,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
     const [templateType, setTemplateType] = useState<TemplateType>('general');
     const [model, setModel] = useState<SmartNoteModel>('gemini-3-flash-preview');
     const [isComplex, setIsComplex] = useState(false);
+    const [pronouns, setPronouns] = useState<'auto' | 'he_him' | 'she_her' | 'they_them'>('auto');
 
     // Generation status
     const [generationState, setGenerationState] = useState<GenerationState>({
@@ -276,6 +277,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         setTemplateType('general');
         setModel('gemini-3-flash-preview');
         setIsComplex(false);
+        setPronouns('auto');
         setGenerationState({ transcript: 'idle', note: 'idle', letter: 'idle', tasks: 'idle' });
         setRecordingDuration(0);
         setAudioSizeMB(0);
@@ -323,7 +325,8 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                         generateLetter,
                         letterType: generateLetter ? letterType : undefined,
                         templateType: generateLetter ? templateType : undefined,
-                        isComplex: generateLetter ? isComplex : undefined
+                        isComplex: generateLetter ? isComplex : undefined,
+                        pronouns: generateLetter ? pronouns : undefined
                     },
                     model
                 };
@@ -627,7 +630,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                             <div className="space-y-2">
                                 <Label>Model</Label>
                                 <Select value={model} onValueChange={(v) => setModel(v as SmartNoteModel)}>
@@ -687,6 +690,25 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                                                 <SelectItem value="eoe">EoE</SelectItem>
                                             </>
                                         )}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label>Pronouns</Label>
+                                <Select
+                                    value={pronouns}
+                                    onValueChange={(v) => setPronouns(v as any)}
+                                    disabled={!generateLetter}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Pronouns" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="auto">Auto (Default)</SelectItem>
+                                        <SelectItem value="he_him">He/Him</SelectItem>
+                                        <SelectItem value="she_her">She/Her</SelectItem>
+                                        <SelectItem value="they_them">They/Them</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>

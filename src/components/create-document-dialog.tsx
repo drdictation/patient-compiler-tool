@@ -64,6 +64,7 @@ export function CreateDocumentDialog({
     const [additionalContext, setAdditionalContext] = useState('');
     const [includePatientHistory, setIncludePatientHistory] = useState(false);
     const [isComplex, setIsComplex] = useState(false);
+    const [pronouns, setPronouns] = useState<'auto' | 'he_him' | 'she_her' | 'they_them'>('auto');
     const [model, setModel] = useState<SmartNoteModel>('gemini-3-flash-preview');
 
     const handleGenerate = () => {
@@ -87,6 +88,7 @@ export function CreateDocumentDialog({
                     additionalContext: additionalContext.trim() || undefined,
                     includePatientHistory: documentType === 'referral_letter' ? includePatientHistory : false,
                     isComplex: documentType === 'referral_letter' ? isComplex : undefined,
+                    pronouns: documentType === 'referral_letter' ? pronouns : undefined,
                     model
                 });
 
@@ -113,6 +115,7 @@ export function CreateDocumentDialog({
         setAdditionalContext('');
         setIncludePatientHistory(false);
         setIsComplex(false);
+        setPronouns('auto');
         setModel('gemini-3-flash-preview');
     };
 
@@ -210,15 +213,31 @@ export function CreateDocumentDialog({
                         {/* Referral Fields */}
                         {documentType === 'referral_letter' && (
                             <div className="space-y-4 border rounded-lg p-4 bg-slate-50/50 border-slate-200">
-                                <div className="space-y-1.5">
-                                    <Label htmlFor="clinician-type">Type of Clinician / Specialist</Label>
-                                    <Input
-                                        id="clinician-type"
-                                        placeholder="e.g., Cardiologist, Physiotherapist, Dietitian"
-                                        value={clinicianType}
-                                        onChange={(e) => setClinicianType(e.target.value)}
-                                        className="border-slate-200 bg-white"
-                                    />
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-1.5">
+                                        <Label htmlFor="clinician-type">Type of Clinician / Specialist</Label>
+                                        <Input
+                                            id="clinician-type"
+                                            placeholder="e.g., Cardiologist, Physiotherapist..."
+                                            value={clinicianType}
+                                            onChange={(e) => setClinicianType(e.target.value)}
+                                            className="border-slate-200 bg-white"
+                                        />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label htmlFor="doc-pronouns">Patient Pronouns</Label>
+                                        <Select value={pronouns} onValueChange={(v) => setPronouns(v as any)}>
+                                            <SelectTrigger id="doc-pronouns" className="border-slate-200 bg-white">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="auto">Auto (Default)</SelectItem>
+                                                <SelectItem value="he_him">He/Him</SelectItem>
+                                                <SelectItem value="she_her">She/Her</SelectItem>
+                                                <SelectItem value="they_them">They/Them</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
                                 </div>
 
                                 <div className="flex items-center justify-between border-t pt-3">
