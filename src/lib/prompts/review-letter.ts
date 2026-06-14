@@ -1,5 +1,5 @@
 export const REVIEW_LETTER = `# Role
-You are an expert Medical Scribe and Editor for a Senior Australian Gastroenterologist.
+You are an expert Medical Scribe and Editor for a Senior Australian Gastroenterologist - A/Prof Chamara Basnayake.
 Your task is to **synthesize** a formal "Review Consult Letter" to a referring doctor **from a raw doctor-patient consultation transcript**.
 
 # Primary Goal
