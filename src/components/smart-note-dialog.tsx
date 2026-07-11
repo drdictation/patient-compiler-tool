@@ -24,7 +24,7 @@ import {
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { Sparkles, Mic, Square, Loader2, Check, AlertCircle, FileText, Mail } from 'lucide-react';
-import { createSmartNote, SmartNoteOptions } from '@/app/actions';
+import { prepareSmartNoteGeneration, generateClinicalDocuments, extractAndSaveTasks, SmartNoteOptions } from '@/app/actions';
 import { SmartNoteModel } from '@/lib/llm';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
@@ -54,7 +54,11 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
     const MAX_TOTAL_MB = 25;
 
     const [open, setOpen] = useState(false);
-    const [isPending, startTransition] = useTransition();
+    const [, startTransition] = useTransition();
+    const [isPreparing, setIsPreparing] = useState(false);
+    const [isGeneratingClinical, setIsGeneratingClinical] = useState(false);
+    const [, setIsExtractingTasks] = useState(false);
+    const isMountedRef = useRef(true);
     const router = useRouter();
 
     // Input mode
@@ -101,7 +105,9 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
 
     // Cleanup on unmount only
     useEffect(() => {
+        isMountedRef.current = true;
         return () => {
+            isMountedRef.current = false;
             if (timerRef.current) {
                 clearInterval(timerRef.current);
                 timerRef.current = null;
@@ -312,7 +318,10 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
             tasks: 'generating'
         });
 
+        setIsPreparing(true);
+
         startTransition(async () => {
+            let context;
             try {
                 const options: SmartNoteOptions = {
                     patientId,
@@ -331,48 +340,125 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                     model
                 };
 
-                const result = await createSmartNote(options);
+                context = await prepareSmartNoteGeneration(options);
+                
+                if (isMountedRef.current) {
+                    setGenerationState(prev => ({
+                        ...prev,
+                        transcript: 'success'
+                    }));
+                    setIsPreparing(false);
+                    setIsGeneratingClinical(true);
+                    setIsExtractingTasks(true);
+                }
+            } catch (e: any) {
+                console.error('Preparation failed:', e);
+                if (isMountedRef.current) {
+                    setIsPreparing(false);
+                    toast.error(`Preparation failed: ${e.message}`);
+                    setGenerationState({
+                        transcript: 'error',
+                        note: generateNote ? 'error' : 'idle',
+                        letter: generateLetter ? 'error' : 'idle',
+                        tasks: 'error'
+                    });
+                }
+                return;
+            }
 
-                // Update generation states based on results
-                setGenerationState({
-                    transcript: result.transcriptArtifactId ? 'success' : 'error',
-                    note: generateNote
-                        ? (result.noteArtifactId ? 'success' : 'error')
-                        : 'idle',
-                    letter: generateLetter
-                        ? (result.letterArtifactId ? 'success' : 'error')
-                        : 'idle',
-                    tasks: result.tasksExtracted !== undefined ? 'success' : 'error'
+            // Start clinical generation and task extraction concurrently
+            const clinicalPromise = generateClinicalDocuments(context);
+            const tasksPromise = extractAndSaveTasks(context);
+
+            // Handle tasks promise asynchronously/non-blocking
+            tasksPromise
+                .then((result) => {
+                    if (isMountedRef.current && open) {
+                        setGenerationState(prev => ({
+                            ...prev,
+                            tasks: result.status === 'success' ? 'success' : 'error'
+                        }));
+                        setIsExtractingTasks(false);
+                    }
+                    if (result.status === 'success') {
+                        toast.success(`Extracted and saved ${result.insertedCount} tasks successfully`);
+                    } else if (result.status === 'failed' && result.error) {
+                        toast.error(`Task extraction warning: ${result.error.message}`);
+                    }
+                })
+                .catch((err) => {
+                    console.error('Task promise error:', err);
+                    if (isMountedRef.current && open) {
+                        setGenerationState(prev => ({
+                            ...prev,
+                            tasks: 'error'
+                        }));
+                        setIsExtractingTasks(false);
+                    }
+                    toast.error(`Task extraction failed: ${err.message || 'Unknown error'}`);
                 });
 
-                if (result.errors.length > 0) {
-                    result.errors.forEach(err => toast.error(err));
+            // Await only the clinical document promise
+            try {
+                const clinicalResult = await clinicalPromise;
+
+                if (isMountedRef.current) {
+                    setIsGeneratingClinical(false);
+
+                    setGenerationState(prev => ({
+                        ...prev,
+                        note: clinicalResult.note ? (clinicalResult.note.status === 'success' ? 'success' : 'error') : 'idle',
+                        letter: clinicalResult.letter ? (clinicalResult.letter.status === 'success' ? 'success' : 'error') : 'idle'
+                    }));
                 }
 
-                const successCount = [
-                    result.transcriptArtifactId,
-                    result.noteArtifactId,
-                    result.letterArtifactId
-                ].filter(Boolean).length;
+                // Gather errors and success counts
+                const errors: string[] = [];
+                const successArtifacts: string[] = [];
 
-                if (successCount > 0) {
-                    const taskMsg = result.tasksExtracted ? ` + ${result.tasksExtracted} task(s)` : '';
-                    toast.success(`Created ${successCount} artifact(s)${taskMsg} successfully`);
+                if (clinicalResult.note) {
+                    if (clinicalResult.note.status === 'success') {
+                        successArtifacts.push('Consult note');
+                    } else if (clinicalResult.note.error) {
+                        errors.push(`Note generation failed: ${clinicalResult.note.error.message}`);
+                    }
+                }
+
+                if (clinicalResult.letter) {
+                    if (clinicalResult.letter.status === 'success') {
+                        successArtifacts.push('Referrer letter');
+                    } else if (clinicalResult.letter.error) {
+                        errors.push(`Letter generation failed: ${clinicalResult.letter.error.message}`);
+                    }
+                }
+
+                if (errors.length > 0) {
+                    errors.forEach(err => toast.error(err));
+                }
+
+                if (successArtifacts.length > 0) {
+                    toast.success(`Created ${successArtifacts.join(' and ')} successfully`);
+                    
+                    // Do not block dialog close or router refresh for the tasks promise
                     setTimeout(() => {
-                        setOpen(false);
-                        resetState();
+                        if (isMountedRef.current) {
+                            setOpen(false);
+                            resetState();
+                        }
                         router.refresh();
                     }, 1500);
                 }
-
             } catch (e: any) {
-                toast.error(`Failed: ${e.message}`);
-                setGenerationState({
-                    transcript: 'error',
-                    note: generateNote ? 'error' : 'idle',
-                    letter: generateLetter ? 'error' : 'idle',
-                    tasks: 'error'
-                });
+                console.error('Clinical generation failed:', e);
+                if (isMountedRef.current) {
+                    setIsGeneratingClinical(false);
+                    setGenerationState(prev => ({
+                        ...prev,
+                        note: generateNote ? 'error' : 'idle',
+                        letter: generateLetter ? 'error' : 'idle'
+                    }));
+                    toast.error(`Clinical generation failed: ${e.message}`);
+                }
             }
         });
     };
@@ -844,12 +930,12 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                 </div>
 
                 <DialogFooter className="mt-4">
-                    <Button variant="outline" onClick={() => setOpen(false)} disabled={isPending}>
+                    <Button variant="outline" onClick={() => setOpen(false)} disabled={isPreparing || isGeneratingClinical}>
                         Cancel
                     </Button>
-                    <Button onClick={handleGenerate} disabled={isPending || !transcript.trim()}>
-                        {isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                        {isPending ? 'Generating...' : 'Generate Smart Note'}
+                    <Button onClick={handleGenerate} disabled={isPreparing || isGeneratingClinical || !transcript.trim()}>
+                        {(isPreparing || isGeneratingClinical) && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                        {isPreparing ? 'Preparing...' : isGeneratingClinical ? 'Generating Documents...' : 'Generate Smart Note'}
                     </Button>
                 </DialogFooter>
             </DialogContent>

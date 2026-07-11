@@ -2,7 +2,7 @@
 
 import { supabase } from '@/lib/supabase';
 import { revalidatePath } from 'next/cache';
-import { PatientDetails } from '@/lib/data';
+import { PatientDetails, getPatientDetails } from '@/lib/data';
 
 // ============ CREATE PATIENT ============
 
@@ -474,9 +474,12 @@ export async function getPatientTasks(patientId: string) {
 }
 
 // ============ SMART NOTE CREATION ============
-
 import { generateFromPrompt, SmartNoteModel, extractTasks } from '@/lib/llm';
 import { PROMPTS } from '@/lib/prompts';
+import { postProcessLetter } from '@/lib/letter-post-processing';
+import { PreparedSmartNoteContext, GenerationException, ClinicalGenerationResult, TaskGenerationResult } from '@/lib/generation/contracts';
+import { normaliseTranscript, validateTranscript, hashTranscript } from '@/lib/generation/transcript';
+import * as crypto from 'crypto';
 
 export interface SmartNoteOptions {
     patientId: string;
@@ -580,6 +583,14 @@ This is a highly complex patient consult. The generated letter must reflect this
 4. Avoid aggressive summarization; write in an exhaustive, explanatory clinical style to ensure no nuance is lost.
 `;
 
+const NATURAL_LETTER_STYLE_DIRECTIVE = `
+NATURAL CLINICAL LETTER STYLE (CRITICAL):
+- Write the Impression and plan as connected prose, never as dot points, numbered items, label-and-colon fragments, or bolded plan items.
+- Do not use italics or markdown emphasis for organisms, diagnoses, symptoms, medications, or other clinical terms (for example, write Helicobacter pylori as plain text).
+- Do not place quotation marks around a patient's symptom descriptions or copy colloquial phrases such as "getting stuck" into the letter.
+- Translate patient language into accurate professional medical terminology when the transcript supports it (for example, food getting stuck = dysphagia). If a precise term is not supported, use neutral professional prose rather than inventing a diagnosis.
+`;
+
 function getPronounDirective(pronouns?: 'auto' | 'he_him' | 'she_her' | 'they_them', patientName?: string): string {
     if (!pronouns || pronouns === 'auto') return '';
     const label = pronouns === 'he_him' ? 'he/him/his/himself' 
@@ -609,67 +620,341 @@ function formatSubtitlesAndSignoff(text: string): string {
     // Rule 2: Force bold subtitles to have paragraphs start on a new line
     text = text.replace(/(^|\r?\n)(\*\*(?!Dear\b)[^*\r\n]+?\*\*(?::|\s)\s*)([A-Za-z0-9].*)/gi, '$1$2\n$3');
 
-    return text;
+    return postProcessLetter(text);
+}
+
+/**
+ * Validates the options, normalises/validates transcript, fetches authoritative patient details,
+ * ensures an encounter exists, saves raw transcript, and generates PreparedSmartNoteContext.
+ */
+export async function prepareSmartNoteGeneration(options: SmartNoteOptions): Promise<PreparedSmartNoteContext> {
+    // TODO: Verify authentication using the application's shared server guard when implemented.
+    // Linked to the existing security review.
+    
+    // 1. Runtime validation of options
+    const allowedNoteTypes = ['new_consult', 'review_consult'];
+    if (!allowedNoteTypes.includes(options.noteType)) {
+        throw new GenerationException('INVALID_INPUT', `Invalid noteType: ${options.noteType}`);
+    }
+
+    const allowedModels = ['gemini-2.5-flash', 'gemini-3-flash-preview', 'gemini-3.0-flash', 'gemini-3.1-flash-lite-preview'];
+    if (!allowedModels.includes(options.model)) {
+        throw new GenerationException('INVALID_INPUT', `Invalid model: ${options.model}`);
+    }
+
+    const { outputs } = options;
+    if (outputs.letterType && !['new', 'review'].includes(outputs.letterType)) {
+        throw new GenerationException('INVALID_INPUT', `Invalid letterType: ${outputs.letterType}`);
+    }
+    if (outputs.templateType && !['general', 'ibd', 'functional', 'oesophageal', 'eoe'].includes(outputs.templateType)) {
+        throw new GenerationException('INVALID_INPUT', `Invalid templateType: ${outputs.templateType}`);
+    }
+    if (outputs.pronouns && !['auto', 'he_him', 'she_her', 'they_them'].includes(outputs.pronouns)) {
+        throw new GenerationException('INVALID_INPUT', `Invalid pronouns: ${outputs.pronouns}`);
+    }
+
+    // 2. Normalise and validate transcript
+    const normalised = normaliseTranscript(options.transcript);
+    const validationError = validateTranscript(normalised);
+    if (validationError) {
+        throw new GenerationException(validationError[0], validationError[1]);
+    }
+
+    // 3. Ensure patient exists and use authoritative display name
+    let patient;
+    try {
+        patient = await getPatientDetails(options.patientId);
+    } catch (e: any) {
+        throw new GenerationException('PERSISTENCE_FAILED', `Failed to lookup patient: ${e.message}`);
+    }
+    
+    if (!patient) {
+        throw new GenerationException('INVALID_INPUT', `Patient not found: ${options.patientId}`);
+    }
+    const patientName = patient.display_name;
+
+    // 4. Ensure encounter exists
+    let encounterId: string;
+    try {
+        encounterId = await ensureEncounter(options.patientId, options.date);
+    } catch (e: any) {
+        throw new GenerationException('PERSISTENCE_FAILED', `Failed to ensure encounter: ${e.message}`);
+    }
+
+    // 5. Save raw transcript artifact
+    let transcriptArtifactId: string;
+    try {
+        transcriptArtifactId = await saveArtifact(encounterId, 'RAW_TRANSCRIPT', normalised);
+    } catch (e: any) {
+        throw new GenerationException('PERSISTENCE_FAILED', `Failed to save raw transcript artifact: ${e.message}`);
+    }
+
+    // 6. Generate formatted date
+    let formattedDate = options.date;
+    try {
+        const parts = options.date.split('-');
+        if (parts.length === 3) {
+            const year = parts[0];
+            const monthIndex = parseInt(parts[1], 10) - 1;
+            const day = parseInt(parts[2], 10);
+            const monthNames = [
+                "January", "February", "March", "April", "May", "June", 
+                "July", "August", "September", "October", "November", "December"
+            ];
+            if (monthIndex >= 0 && monthIndex < 12) {
+                formattedDate = `${day} ${monthNames[monthIndex]} ${year}`;
+            }
+        }
+    } catch (e) {
+        console.error('Failed to parse date string:', options.date, e);
+    }
+
+    const transcriptHash = hashTranscript(normalised);
+    const requestId = crypto.randomUUID();
+
+    // Default extractTasks is true for backward compatibility
+    const extractTasksFlag = true;
+
+    return {
+        requestId,
+        patientId: options.patientId,
+        patientName,
+        encounterId,
+        encounterDate: options.date,
+        formattedDate,
+        normalisedTranscript: normalised,
+        transcriptHash,
+        transcriptArtifactId,
+        noteType: options.noteType,
+        outputs: {
+            generateNote: !!outputs.generateNote,
+            generateLetter: !!outputs.generateLetter,
+            letterType: outputs.letterType,
+            templateType: outputs.templateType,
+            isComplex: !!outputs.isComplex,
+            pronouns: outputs.pronouns
+        },
+        model: options.model,
+        extractTasks: extractTasksFlag,
+        promptVersion: '1.0' // initial version placeholder
+    };
+}
+
+/**
+ * Server action to generate both note and letter concurrently from a prepared context.
+ */
+export async function generateClinicalDocuments(context: PreparedSmartNoteContext): Promise<ClinicalGenerationResult> {
+    const result: ClinicalGenerationResult = {};
+
+    const promises: Promise<void>[] = [];
+
+    // 1. Consult Note Generation
+    if (context.outputs.generateNote) {
+        const generateNotePromise = (async () => {
+            try {
+                const promptKey = context.noteType === 'new_consult' ? 'NEW_CONSULT_NOTE' : 'REVIEW_CONSULT_NOTE';
+                const prompt = PROMPTS[promptKey];
+
+                const { content } = await generateFromPrompt(
+                    context.normalisedTranscript,
+                    context.patientName,
+                    prompt,
+                    context.model,
+                    context.patientId,
+                    'smart_note_consult',
+                    context.formattedDate
+                );
+
+                const artifactId = await saveArtifact(context.encounterId, 'INTERNAL_NOTE', content);
+                result.note = {
+                    status: 'success',
+                    artifactId,
+                    content
+                };
+            } catch (e: any) {
+                console.error('Note generation failed:', e);
+                result.note = {
+                    status: 'failed',
+                    error: {
+                        code: 'PROVIDER_ERROR',
+                        message: e.message || 'Note generation failed.'
+                    }
+                };
+            }
+        })();
+        promises.push(generateNotePromise);
+    } else {
+        result.note = { status: 'skipped' };
+    }
+
+    // 2. Referrer Letter Generation
+    if (context.outputs.generateLetter) {
+        const generateLetterPromise = (async () => {
+            try {
+                let promptKey = 'NEW_LETTER';
+                const type = context.outputs.letterType || 'review';
+                const template = context.outputs.templateType || 'general';
+
+                if (template === 'general') {
+                    promptKey = type === 'review' ? 'REVIEW_LETTER' : 'NEW_LETTER';
+                } else if (template === 'ibd') {
+                    promptKey = type === 'review' ? 'IBD_REVIEW_LETTER' : 'IBD_NEW_LETTER';
+                } else if (template === 'functional') {
+                    promptKey = type === 'review' ? 'FUNCTIONAL_REVIEW_LETTER' : 'FUNCTIONAL_NEW_LETTER';
+                } else if (template === 'oesophageal') {
+                    promptKey = type === 'review' ? 'FUNCTIONAL_REVIEW_LETTER' : 'OESOPHAGEAL_NEW_LETTER';
+                } else if (template === 'eoe') {
+                    promptKey = type === 'review' ? 'FUNCTIONAL_REVIEW_LETTER' : 'EOE_NEW_LETTER';
+                }
+
+                // @ts-ignore
+                let prompt = (PROMPTS as any)[promptKey] || PROMPTS.NEW_LETTER;
+                prompt = prompt + "\n\n" + NATURAL_LETTER_STYLE_DIRECTIVE;
+                if (context.outputs.isComplex) {
+                    prompt = prompt + "\n\n" + COMPLEXITY_DIRECTIVE;
+                }
+                if (context.outputs.pronouns) {
+                    prompt = prompt + getPronounDirective(context.outputs.pronouns, context.patientName);
+                }
+
+                let { content } = await generateFromPrompt(
+                    context.normalisedTranscript,
+                    context.patientName,
+                    prompt,
+                    context.model,
+                    context.patientId,
+                    'smart_note_letter',
+                    context.formattedDate
+                );
+
+                content = formatSubtitlesAndSignoff(content);
+                const artifactId = await saveArtifact(context.encounterId, 'REFERRER_LETTER', content);
+                result.letter = {
+                    status: 'success',
+                    artifactId,
+                    content
+                };
+            } catch (e: any) {
+                console.error('Letter generation failed:', e);
+                result.letter = {
+                    status: 'failed',
+                    error: {
+                        code: 'PROVIDER_ERROR',
+                        message: e.message || 'Letter generation failed.'
+                    }
+                };
+            }
+        })();
+        promises.push(generateLetterPromise);
+    } else {
+        result.letter = { status: 'skipped' };
+    }
+
+    // Run concurrently and wait for all to settle
+    await Promise.allSettled(promises);
+
+    revalidatePath('/patient/[id]');
+    revalidatePath('/');
+
+    return result;
+}
+
+/**
+ * Server action to extract and save tasks from a prepared context.
+ */
+export async function extractAndSaveTasks(context: PreparedSmartNoteContext): Promise<TaskGenerationResult> {
+    if (!context.extractTasks) {
+        return {
+            status: 'skipped',
+            insertedCount: 0,
+            reusedCount: 0
+        };
+    }
+
+    try {
+        const taskResult = await extractTasks(
+            context.normalisedTranscript,
+            context.patientName,
+            'groq-llama-4',
+            context.patientId
+        );
+
+        if (!taskResult.tasks || taskResult.tasks.length === 0) {
+            return {
+                status: 'success',
+                insertedCount: 0,
+                reusedCount: 0
+            };
+        }
+
+        // Map into database rows
+        const rows = taskResult.tasks.map((task: any) => ({
+            canonical_patient_id: context.patientId,
+            task_description: task.task_description,
+            task_category: task.task_category,
+            evidence_quote: task.evidence_quote,
+            confidence: task.confidence,
+            source_encounter_id: context.encounterId,
+            source_artifact_id: context.transcriptArtifactId,
+            lifecycle_state: 'suggested',
+            status: 'pending'
+        }));
+
+        // Batch insert in a single call
+        const { error } = await supabase.from('patient_task').insert(rows);
+        if (error) {
+            throw new Error(`Database batch insert failed: ${error.message}`);
+        }
+
+        revalidatePath('/patient/[id]');
+        revalidatePath('/');
+
+        return {
+            status: 'success',
+            insertedCount: rows.length,
+            reusedCount: 0
+        };
+    } catch (e: any) {
+        console.error('Task extraction failed:', e);
+        return {
+            status: 'failed',
+            insertedCount: 0,
+            reusedCount: 0,
+            error: {
+                code: 'PROVIDER_ERROR',
+                message: e.message || 'Task extraction failed.'
+            }
+        };
+    }
 }
 
 /**
  * Create Smart Note artifacts from a transcript.
- * Handles partial failures - if one generation fails, others still complete.
- * Also extracts tasks from the transcript.
+ * @deprecated Use prepareSmartNoteGeneration and parallel generation functions.
  */
 export async function createSmartNote(options: SmartNoteOptions): Promise<SmartNoteResult> {
-    const { patientId, patientName, date, transcript, noteType, outputs, model } = options;
     const result: SmartNoteResult = { errors: [] };
 
-    let formattedDate: string | undefined = undefined;
-    if (date) {
-        try {
-            const parts = date.split('-');
-            if (parts.length === 3) {
-                const year = parts[0];
-                const monthIndex = parseInt(parts[1], 10) - 1;
-                const day = parseInt(parts[2], 10);
-                const monthNames = [
-                    "January", "February", "March", "April", "May", "June", 
-                    "July", "August", "September", "October", "November", "December"
-                ];
-                if (monthIndex >= 0 && monthIndex < 12) {
-                    formattedDate = `${day} ${monthNames[monthIndex]} ${year}`;
-                }
-            }
-        } catch (e) {
-            console.error('Failed to parse date string:', date, e);
-        }
-        if (!formattedDate) {
-            formattedDate = date;
-        }
-    }
-
     try {
-        // 1. Ensure encounter exists
-        const encounterId = await ensureEncounter(patientId, date);
-
-        // 2. Save raw transcript
-        try {
-            result.transcriptArtifactId = await saveArtifact(encounterId, 'RAW_TRANSCRIPT', transcript);
-        } catch (e: any) {
-            result.errors.push(`Failed to save transcript: ${e.message}`);
-        }
+        // Call the new preparation action
+        const context = await prepareSmartNoteGeneration(options);
+        result.transcriptArtifactId = context.transcriptArtifactId;
+        const encounterId = context.encounterId;
 
         // 3. Generate Consult Note if requested
-        if (outputs.generateNote) {
+        if (context.outputs.generateNote) {
             try {
-                const promptKey = noteType === 'new_consult' ? 'NEW_CONSULT_NOTE' : 'REVIEW_CONSULT_NOTE';
+                const promptKey = context.noteType === 'new_consult' ? 'NEW_CONSULT_NOTE' : 'REVIEW_CONSULT_NOTE';
                 const prompt = PROMPTS[promptKey];
 
                 const { content } = await generateFromPrompt(
-                    transcript,
-                    patientName,
+                    context.normalisedTranscript,
+                    context.patientName,
                     prompt,
-                    model, // Use user-selected model
-                    patientId,
+                    context.model, // Use user-selected model
+                    context.patientId,
                     'smart_note_consult',
-                    formattedDate
+                    context.formattedDate
                 );
                 result.noteArtifactId = await saveArtifact(encounterId, 'INTERNAL_NOTE', content);
             } catch (e: any) {
@@ -677,11 +962,11 @@ export async function createSmartNote(options: SmartNoteOptions): Promise<SmartN
             }
         }
 
-        if (outputs.generateLetter) {
+        if (context.outputs.generateLetter) {
             try {
                 let promptKey = 'NEW_LETTER';
-                const type = outputs.letterType || 'review';
-                const template = outputs.templateType || 'general';
+                const type = context.outputs.letterType || 'review';
+                const template = context.outputs.templateType || 'general';
 
                 if (template === 'general') {
                     promptKey = type === 'review' ? 'REVIEW_LETTER' : 'NEW_LETTER';
@@ -699,21 +984,22 @@ export async function createSmartNote(options: SmartNoteOptions): Promise<SmartN
 
                 // @ts-ignore - access dynamically
                 let prompt = (PROMPTS as any)[promptKey] || PROMPTS.NEW_LETTER;
-                if (outputs.isComplex) {
+                prompt = prompt + "\n\n" + NATURAL_LETTER_STYLE_DIRECTIVE;
+                if (context.outputs.isComplex) {
                     prompt = prompt + "\n\n" + COMPLEXITY_DIRECTIVE;
                 }
-                if (outputs.pronouns) {
-                    prompt = prompt + getPronounDirective(outputs.pronouns, patientName);
+                if (context.outputs.pronouns) {
+                    prompt = prompt + getPronounDirective(context.outputs.pronouns, context.patientName);
                 }
 
                 let { content } = await generateFromPrompt(
-                    transcript,
-                    patientName,
+                    context.normalisedTranscript,
+                    context.patientName,
                     prompt,
-                    model,
-                    patientId,
+                    context.model,
+                    context.patientId,
                     'smart_note_letter',
-                    formattedDate
+                    context.formattedDate
                 );
                 content = formatSubtitlesAndSignoff(content);
                 result.letterArtifactId = await saveArtifact(encounterId, 'REFERRER_LETTER', content);
@@ -725,12 +1011,12 @@ export async function createSmartNote(options: SmartNoteOptions): Promise<SmartN
         // 5. Extract Tasks (always runs)
         try {
             // Enforced model for Tasks (Groq Llama Maverick)
-            const taskResult = await extractTasks(transcript, patientName, 'groq-llama-4', patientId);
+            const taskResult = await extractTasks(context.normalisedTranscript, context.patientName, 'groq-llama-4', context.patientId);
 
             // Save each extracted task to the database
             for (const task of taskResult.tasks) {
                 await supabase.from('patient_task').insert({
-                    canonical_patient_id: patientId,
+                    canonical_patient_id: context.patientId,
                     task_description: task.task_description,
                     task_category: task.task_category,
                     evidence_quote: task.evidence_quote,
