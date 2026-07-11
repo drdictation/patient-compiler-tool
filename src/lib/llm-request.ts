@@ -85,15 +85,16 @@ export async function fetchWithRetryAndTimeout(options: RequestWithRetryOptions)
     const startTime = Date.now();
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        const remainingMs = timeoutDuration - (Date.now() - startTime);
+        if (remainingMs <= 0) {
+            throw new BoundedRequestException('NON_RETRYABLE', 'TIMEOUT', 'Operation timed out: total time budget exceeded.');
+        }
+
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
+        const timeoutId = setTimeout(() => controller.abort(), remainingMs);
 
         const attemptStartTime = Date.now();
         try {
-            const elapsedTotal = Date.now() - startTime;
-            if (elapsedTotal >= timeoutDuration) {
-                throw new BoundedRequestException('NON_RETRYABLE', 'TIMEOUT', 'Operation timed out: total time budget exceeded.');
-            }
 
             const response = await fetch(options.url, {
                 ...options.init,

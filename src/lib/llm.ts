@@ -1,6 +1,6 @@
 
 import { supabase } from './supabase';
-import { fetchWithRetryAndTimeout } from './llm-request';
+import { fetchWithRetryAndTimeout, classifyError, BoundedRequestException } from './llm-request';
 
 export type LLMProvider = 'gemini-flash' | 'gemini-flash-lite' | 'gemini-3.0-flash' | 'groq-llama-3' | 'groq-gpt-oss' | 'groq-llama-4';
 
@@ -517,8 +517,13 @@ async function extractGeneric<T>(
             }
 
             return await callGroq(text, attempt, systemPrompt, patientId, attemptPurpose, requestId) as T;
-        } catch (e: any) {
-            lastError = e;
+        } catch (e: unknown) {
+            const err = e instanceof Error ? e : new Error(String(e));
+            lastError = err;
+            const classified = e instanceof BoundedRequestException ? e : classifyError(e);
+            if (classified.category === 'NON_RETRYABLE') {
+                throw e;
+            }
         }
     }
 

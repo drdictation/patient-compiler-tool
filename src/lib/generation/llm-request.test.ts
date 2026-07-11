@@ -1,3 +1,25 @@
+import Module from 'module';
+
+// Define dummy Supabase env variables to prevent supabase.ts throwing errors during require
+process.env.NEXT_PUBLIC_SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supabase.co';
+process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'dummy-service-role-key';
+
+type LoadFunction = (request: string, parent: unknown, isMain: boolean) => unknown;
+const moduleWithLoad = Module as unknown as { _load: LoadFunction };
+const originalLoad = moduleWithLoad._load;
+
+moduleWithLoad._load = function (request: string, parent: unknown, isMain: boolean) {
+    if (request === 'server-only') {
+        return {};
+    }
+    if (request === 'next/cache') {
+        return {
+            revalidatePath: () => {}
+        };
+    }
+    return originalLoad.call(this, request, parent, isMain);
+};
+
 import { test } from 'node:test';
 import * as assert from 'node:assert';
 import {
@@ -139,6 +161,113 @@ test('Timeout and Retry Fetch Logic', async (t) => {
             assert.strictEqual(attempts, 1); // No retry attempted
         } finally {
             globalThis.fetch = originalFetch;
+        }
+    });
+
+    await t.test('NON_RETRYABLE 400 error does not trigger fallbacks in extractTasks', async () => {
+        const { extractTasks } = await import('../llm');
+        const originalFetch = globalThis.fetch;
+        let callCount = 0;
+        const fetchedUrls: string[] = [];
+
+        globalThis.fetch = (async (input: RequestInfo | URL) => {
+            const urlStr = input.toString();
+            if (!urlStr.includes('api.groq.com') && !urlStr.includes('generativelanguage')) {
+                return {
+                    ok: true,
+                    json: async () => ({})
+                } as unknown as Response;
+            }
+            callCount++;
+            fetchedUrls.push(urlStr);
+            return {
+                ok: false,
+                status: 400,
+                text: async () => 'Bad Request'
+            } as unknown as Response;
+        }) as typeof fetch;
+
+        try {
+            await extractTasks(
+                'a '.repeat(50),
+                'Test Patient',
+                'groq-llama-4',
+                'pat-123'
+            );
+            assert.fail('Expected extractTasks to throw');
+        } catch (err: unknown) {
+            const casted = err as BoundedRequestException;
+            assert.strictEqual(casted.httpStatus, 400);
+            assert.strictEqual(callCount, 1);
+            assert.ok(fetchedUrls[0].includes('api.groq.com'));
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+    });
+
+    await t.test('prevents retry when elapsed time nearly exhausts or exceeds the budget', async () => {
+        const originalFetch = globalThis.fetch;
+        const originalNow = Date.now;
+
+        let callCount = 0;
+        let currentTime = 1000000;
+        Date.now = () => currentTime;
+
+        globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+            const urlStr = input.toString();
+            if (!urlStr.includes('dummy.co')) {
+                return {
+                    ok: true,
+                    json: async () => ({})
+                } as unknown as Response;
+            }
+            callCount++;
+            console.log(`[TEST DEBUG] fetch callCount: ${callCount}, URL: ${urlStr}`);
+            if (callCount === 1) {
+                // Simulate first attempt took 14.5 seconds of the 15 seconds budget
+                currentTime += 14500;
+                return {
+                    ok: false,
+                    status: 503,
+                    headers: { get: () => null },
+                    text: async () => 'Service Unavailable'
+                } as unknown as Response;
+            } else {
+                // Second attempt takes 1000ms. Since remaining budget is 500ms,
+                // the abort controller should fire and cancel the request.
+                return new Promise((resolve, reject) => {
+                    const timer = setTimeout(() => {
+                        resolve({
+                            ok: true,
+                            json: async () => ({})
+                        } as unknown as Response);
+                    }, 1000);
+
+                    if (init?.signal) {
+                        init.signal.addEventListener('abort', () => {
+                            clearTimeout(timer);
+                            reject(new DOMException('The user aborted a request.', 'AbortError'));
+                        });
+                    }
+                });
+            }
+        }) as typeof fetch;
+
+        try {
+            await fetchWithRetryAndTimeout({
+                operation: 'TASK_EXTRACTION', // Timeout budget is 15000ms
+                url: 'https://dummy.co',
+                init: { method: 'POST' }
+            });
+            assert.fail('Expected timeout error');
+        } catch (err: unknown) {
+            const casted = err as BoundedRequestException;
+            assert.strictEqual(casted.errorCode, 'TIMEOUT');
+            console.log(`[TEST DEBUG] Final callCount: ${callCount}`);
+            assert.strictEqual(callCount, 2); // Attempted second time but timed out
+        } finally {
+            globalThis.fetch = originalFetch;
+            Date.now = originalNow;
         }
     });
 });
