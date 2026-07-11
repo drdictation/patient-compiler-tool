@@ -39,8 +39,3 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-
-# evaluation baselines — gitignored: generated LLM output, may contain PHI
-# evaluation/fixtures/ is committed (synthetic only)
-evaluation/baselines/*
-!evaluation/baselines/.gitkeep

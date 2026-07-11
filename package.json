@@ -6,9 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
-    "eval:validate": "tsx evaluation/validate-fixtures.ts",
-    "eval:baseline": "node --import tsx --env-file=.env evaluation/run-baseline.ts"
+    "lint": "eslint"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.15",
