@@ -476,6 +476,7 @@ export async function getPatientTasks(patientId: string) {
 // ============ SMART NOTE CREATION ============
 import { generateFromPrompt, SmartNoteModel, extractTasks } from '@/lib/llm';
 import { PROMPTS } from '@/lib/prompts';
+import { resolveLetterPrompt, DETAILED_LETTER_DIRECTIVE } from '@/lib/prompts/registry';
 import { postProcessLetter } from '@/lib/letter-post-processing';
 import { PreparedSmartNoteContext, GenerationException, ClinicalGenerationResult, TaskGenerationResult } from '@/lib/generation/contracts';
 import { normaliseTranscript, validateTranscript, hashTranscript } from '@/lib/generation/transcript';
@@ -575,14 +576,7 @@ async function saveArtifact(
     return newArt.id;
 }
 
-const COMPLEXITY_DIRECTIVE = `
-CLINICAL COMPLEXITY DIRECTIVE (CRITICAL REQUIREMENT):
-This is a highly complex patient consult. The generated letter must reflect this complexity and be significantly more verbose, detailed, and explanatory than a standard summary. You MUST:
-1. Elaborate in detail on all physiological, pathological, and pathophysiological pathways discussed during the consultation.
-2. Detail any psychosocial complexities influencing the patient's presentation, coping mechanisms, or care plan.
-3. Fully capture medicolegal reasoning, discussions, and decision-making regarding investigations (Ix), treatment choices, and potential risks or alternatives discussed.
-4. Avoid aggressive summarization; write in an exhaustive, explanatory clinical style to ensure no nuance is lost.
-`;
+// COMPLEXITY_DIRECTIVE removed — replaced by DETAILED_LETTER_DIRECTIVE from @/lib/prompts/registry
 
 const NATURAL_LETTER_STYLE_DIRECTIVE = `
 NATURAL CLINICAL LETTER STYLE (CRITICAL):
@@ -733,6 +727,7 @@ export async function prepareSmartNoteGeneration(options: SmartNoteOptions): Pro
             letterType: outputs.letterType,
             templateType: outputs.templateType,
             isComplex: !!outputs.isComplex,
+            detailLevel: outputs.isComplex ? 'detailed' : 'standard',
             pronouns: outputs.pronouns
         },
         model: options.model,
@@ -809,27 +804,13 @@ export async function generateClinicalDocuments(context: PreparedSmartNoteContex
     if (context.outputs.generateLetter) {
         const generateLetterPromise = (async () => {
             try {
-                let promptKey = 'NEW_LETTER';
                 const type = context.outputs.letterType || 'review';
                 const template = context.outputs.templateType || 'general';
 
-                if (template === 'general') {
-                    promptKey = type === 'review' ? 'REVIEW_LETTER' : 'NEW_LETTER';
-                } else if (template === 'ibd') {
-                    promptKey = type === 'review' ? 'IBD_REVIEW_LETTER' : 'IBD_NEW_LETTER';
-                } else if (template === 'functional') {
-                    promptKey = type === 'review' ? 'FUNCTIONAL_REVIEW_LETTER' : 'FUNCTIONAL_NEW_LETTER';
-                } else if (template === 'oesophageal') {
-                    promptKey = type === 'review' ? 'FUNCTIONAL_REVIEW_LETTER' : 'OESOPHAGEAL_NEW_LETTER';
-                } else if (template === 'eoe') {
-                    promptKey = type === 'review' ? 'FUNCTIONAL_REVIEW_LETTER' : 'EOE_NEW_LETTER';
-                }
-
-                // @ts-ignore
-                let prompt = (PROMPTS as any)[promptKey] || PROMPTS.NEW_LETTER;
+                let prompt = resolveLetterPrompt({ letterType: type, templateType: template });
                 prompt = prompt + "\n\n" + NATURAL_LETTER_STYLE_DIRECTIVE;
-                if (context.outputs.isComplex) {
-                    prompt = prompt + "\n\n" + COMPLEXITY_DIRECTIVE;
+                if (context.outputs.detailLevel === 'detailed') {
+                    prompt = prompt + "\n\n" + DETAILED_LETTER_DIRECTIVE;
                 }
                 if (context.outputs.pronouns) {
                     prompt = prompt + getPronounDirective(context.outputs.pronouns, context.patientName);
@@ -1025,29 +1006,13 @@ export async function createSmartNote(options: SmartNoteOptions): Promise<SmartN
 
         if (context.outputs.generateLetter) {
             try {
-                let promptKey = 'NEW_LETTER';
                 const type = context.outputs.letterType || 'review';
                 const template = context.outputs.templateType || 'general';
 
-                if (template === 'general') {
-                    promptKey = type === 'review' ? 'REVIEW_LETTER' : 'NEW_LETTER';
-                } else if (template === 'ibd') {
-                    promptKey = type === 'review' ? 'IBD_REVIEW_LETTER' : 'IBD_NEW_LETTER';
-                } else if (template === 'functional') {
-                    promptKey = type === 'review' ? 'FUNCTIONAL_REVIEW_LETTER' : 'FUNCTIONAL_NEW_LETTER';
-                } else if (template === 'oesophageal') {
-                    // Use Functional Review for Oesophageal Review
-                    promptKey = type === 'review' ? 'FUNCTIONAL_REVIEW_LETTER' : 'OESOPHAGEAL_NEW_LETTER';
-                } else if (template === 'eoe') {
-                    // Use Functional Review for EoE Review
-                    promptKey = type === 'review' ? 'FUNCTIONAL_REVIEW_LETTER' : 'EOE_NEW_LETTER';
-                }
-
-                // @ts-ignore - access dynamically
-                let prompt = (PROMPTS as any)[promptKey] || PROMPTS.NEW_LETTER;
+                let prompt = resolveLetterPrompt({ letterType: type, templateType: template });
                 prompt = prompt + "\n\n" + NATURAL_LETTER_STYLE_DIRECTIVE;
-                if (context.outputs.isComplex) {
-                    prompt = prompt + "\n\n" + COMPLEXITY_DIRECTIVE;
+                if (context.outputs.detailLevel === 'detailed') {
+                    prompt = prompt + "\n\n" + DETAILED_LETTER_DIRECTIVE;
                 }
                 if (context.outputs.pronouns) {
                     prompt = prompt + getPronounDirective(context.outputs.pronouns, context.patientName);
@@ -1676,7 +1641,7 @@ export async function generateAdditionalDocument(
             const { OUTBOUND_REFERRAL_LETTER } = await import('@/lib/prompts/outbound-referral-letter');
             let template = OUTBOUND_REFERRAL_LETTER;
             if (isComplex) {
-                template = template + "\n\n" + COMPLEXITY_DIRECTIVE;
+                template = template + "\n\n" + DETAILED_LETTER_DIRECTIVE;
             }
             if (pronouns) {
                 template = template + getPronounDirective(pronouns, patientName);

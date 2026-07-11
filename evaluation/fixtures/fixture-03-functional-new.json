@@ -1,0 +1,71 @@
+{
+  "id": "fixture-03-functional-new",
+  "description": "Functional GI (IBS-D) new consult. Ambiguous medication dose (dose range given). Multiple family members mentioned. Unclear GP action — investigation may or may not proceed. Tests: ambiguous dose handling, family name disambiguation, unclear GP-action state.",
+  "patientName": "Marcus Webb",
+  "patientId": "SYNTH-003",
+  "consultOptions": {
+    "noteType": "new_consult",
+    "letterType": "new",
+    "templateType": "functional",
+    "detailLevel": "standard",
+    "pronouns": "he_him"
+  },
+  "transcript": "Gastroenterologist: Good afternoon Mr Webb. Your GP Dr Okonkwo has sent you along for assessment of chronic diarrhoea and abdominal cramping.\n\nPatient: Yes, it's been going on for about two years. My mum had similar bowel issues — she was told it was irritable bowel. My brother James also has some stomach problems but he's never been properly assessed.\n\nGastroenterologist: Right, so there's a family history of functional bowel symptoms on the maternal side. Your bloods including coeliac serology are normal. Stool cultures were negative. You don't have nocturnal symptoms, no blood, no fever. Your weight is stable. This presentation is consistent with irritable bowel syndrome, predominantly diarrhoea subtype.\n\nPatient: Is there anything I can take?\n\nGastroenterologist: I'm going to recommend a trial of a low FODMAP diet in the first instance — your GP can arrange a referral to a dietitian. Regarding medication, I'd suggest we start with loperamide — somewhere between one and two milligrams as needed, up to a maximum of four milligrams per day — for symptomatic relief. Depending on how the low FODMAP trial goes, we may consider colonoscopy down the track to be thorough, but I don't think it's essential right now given the typical presentation.\n\nPatient: That makes sense. Is there anything my brother should do?\n\nGastroenterologist: I can only assess the patient in front of me. Your brother James should see his own GP if he's having symptoms. I'll write to Dr Okonkwo with a summary.",
+  "requiredFacts": {
+    "medications": [
+      "loperamide",
+      "low FODMAP diet"
+    ],
+    "diagnoses": [
+      "irritable bowel syndrome",
+      "IBS-D",
+      "diarrhoea predominant"
+    ],
+    "investigations": [
+      "coeliac serology normal",
+      "stool cultures negative"
+    ],
+    "followUp": [
+      "dietitian referral",
+      "low FODMAP diet trial"
+    ],
+    "gpActions": [
+      "dietitian referral"
+    ]
+  },
+  "forbiddenFacts": [
+    "nocturnal symptoms",
+    "rectal bleeding",
+    "fever",
+    "weight loss",
+    "James Webb",
+    "brother has irritable bowel",
+    "colonoscopy is required",
+    "colonoscopy is recommended"
+  ],
+  "allowedPhrasings": {
+    "loperamide": [
+      "loperamide as needed",
+      "loperamide PRN",
+      "loperamide 1–2 mg as required"
+    ],
+    "low FODMAP diet": [
+      "low-FODMAP diet",
+      "FODMAP elimination diet"
+    ],
+    "irritable bowel syndrome": [
+      "IBS",
+      "irritable bowel"
+    ],
+    "dietitian referral": [
+      "refer to a dietitian",
+      "dietitian review",
+      "dietetic referral"
+    ]
+  },
+  "requiredSections": ["Summary", "Impression and Plan"],
+  "gpActionExpected": "unclear",
+  "clinicianReviewed": false,
+  "promptVersion": "1.0",
+  "createdAt": "2026-07-12T00:00:00Z"
+}

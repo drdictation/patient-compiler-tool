@@ -72,20 +72,40 @@
 - **Unresolved Risks / Follow-up Items**: None.
 
 ### 6. Routing correction and safe detailed-mode wording
-- **Status**: Not Started
-- **Date Completed**: N/A
+- **Status**: Complete
+- **Date Completed**: 2026-07-12
 - **Commit Hash**: N/A
-- **Files Changed**: N/A
-- **Tests Run**: N/A
-- **Unresolved Risks / Follow-up Items**: N/A
+- **Files Changed**:
+  - `src/lib/prompts/registry.ts` (created: `resolveLetterPrompt()` with explicit routing map, `DETAILED_LETTER_DIRECTIVE`, exported `VALID_LETTER_TYPES` / `VALID_TEMPLATE_TYPES`)
+  - `src/lib/generation/contracts.ts` (modified: added `detailLevel: 'standard' | 'detailed'` to `PreparedSmartNoteContext.outputs`, deprecated `isComplex`)
+  - `src/app/actions.ts` (modified: removed `COMPLEXITY_DIRECTIVE`, imported registry, replaced 3 inline routing blocks with `resolveLetterPrompt()`, replaced 3 `COMPLEXITY_DIRECTIVE` usages with `DETAILED_LETTER_DIRECTIVE`, mapped `isComplex` → `detailLevel`)
+  - `src/components/smart-note-dialog.tsx` (modified: renamed "Complex Case (Verbose Letter)" → "Detailed letter (transcript-supported)" with updated description)
+  - `src/components/create-document-dialog.tsx` (modified: same label/description changes)
+  - `src/lib/generation/routing.test.ts` (created: 24 tests covering all valid pairs, oesophageal/EoE misrouting fix, invalid inputs, directive content checks)
+- **Tests Run**: `node --import tsx --env-file=.env --test src/lib/generation/*.test.ts` (77 passing tests)
+- **Unresolved Risks / Follow-up Items**: None.
 
 ### 7. Minimal de-identified baseline fixtures
-- **Status**: Not Started
-- **Date Completed**: N/A
+- **Status**: Complete (awaiting clinician review of fixture annotations)
+- **Date Completed**: 2026-07-12
 - **Commit Hash**: N/A
-- **Files Changed**: N/A
-- **Tests Run**: N/A
-- **Unresolved Risks / Follow-up Items**: N/A
+- **Files Changed**:
+  - `evaluation/schema.ts` (created: `EvaluationFixture` TypeScript type, source of truth for all fixtures)
+  - `evaluation/fixtures/fixture-01-general-new.json` (created: general new, iron deficiency, explicit GP action)
+  - `evaluation/fixtures/fixture-02-ibd-review.json` (created: IBD review, Crohn's remission, negation, no GP action)
+  - `evaluation/fixtures/fixture-03-functional-new.json` (created: functional GI new, IBS-D, ambiguous dose, unclear GP action)
+  - `evaluation/fixtures/fixture-04-oesophageal-new.json` (created: oesophageal new, GORD, short/noisy transcript, explicit pronoun)
+  - `evaluation/fixtures/fixture-05-eoe-review.json` (created: EoE review, detailed mode, complex multi-problem, no GP action)
+  - `evaluation/validate-fixtures.ts` (created: fixture validator — schema check, prohibited pattern scan, review status report)
+  - `evaluation/run-baseline.ts` (created: real production-equivalent generator — replicates exact Gemini API wire format from generateFromPrompt without server-only imports; captures letter content, latency, tokens, finishReason, model, promptVersion per fixture)
+  - `evaluation/README.md` (created: purpose, rules, schema reference, commands, clinician review checklist)
+  - `evaluation/baselines/.gitkeep` (created: keeps directory tracked)
+  - `.gitignore` (modified: added `evaluation/baselines/*` gitignore, preserving `.gitkeep`)
+  - `package.json` (modified: added `eval:validate` and `eval:baseline` scripts)
+- **Tests Run**: `npm run eval:validate` (5 fixtures, 0 errors, 5 warnings: all `clinicianReviewed=false`); `npx tsc --noEmit` (clean)
+- **Unresolved Risks / Follow-up Items**:
+  - **ACTION REQUIRED (Clinician)**: Review `requiredFacts`, `forbiddenFacts`, and `gpActionExpected` in each of the 5 fixtures and set `clinicianReviewed: true` on each once approved. This must happen before Boundary 8 begins.
+  - Once at least one fixture is marked reviewed, run `npm run eval:baseline` to record the real letter baseline (API cost applies). Keep the `evaluation/baselines/` output files locally — they gate Boundary 8.
 
 ### 8. Prompt component refactor and evaluated example cleanup
 - **Status**: Not Started

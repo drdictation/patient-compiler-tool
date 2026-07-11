@@ -48,7 +48,9 @@ export interface PreparedSmartNoteContext {
         generateLetter: boolean;
         letterType?: 'new' | 'review';
         templateType?: 'general' | 'ibd' | 'functional' | 'oesophageal' | 'eoe';
+        /** @deprecated Use detailLevel instead. Kept for backwards compatibility during migration. */
         isComplex?: boolean;
+        detailLevel?: 'standard' | 'detailed';
         pronouns?: 'auto' | 'he_him' | 'she_her' | 'they_them';
     };
     model: SmartNoteModel;

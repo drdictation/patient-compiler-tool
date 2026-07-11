@@ -1,0 +1,70 @@
+{
+  "id": "fixture-02-ibd-review",
+  "description": "IBD (Crohn's disease) review consult. Clear negation: no bleeding, no flare. Planned investigation (MRI small bowel). No GP action required — stable remission. Tests: negation handling, planned vs completed investigation, no-action GP state.",
+  "patientName": "Priya Ramaswamy",
+  "patientId": "SYNTH-002",
+  "consultOptions": {
+    "noteType": "review_consult",
+    "letterType": "review",
+    "templateType": "ibd",
+    "detailLevel": "standard",
+    "pronouns": "she_her"
+  },
+  "transcript": "Gastroenterologist: Hi Priya, lovely to see you again. How have things been since I last saw you six months ago?\n\nPatient: Actually really good. No cramping, no bleeding at all, and my energy is much better. I've been taking the azathioprine regularly.\n\nGastroenterologist: Excellent. She has Crohn's disease involving the terminal ileum, diagnosed three years ago. She's currently on azathioprine 150 milligrams daily and has been in clinical remission for the past 12 months. Her last faecal calprotectin was 45, which is within the normal range. CRP is also normal at 2. Not taking any steroids. Not taking any biologics. No joint symptoms, no skin lesions.\n\nPatient: Is there anything I need to do at this point?\n\nGastroenterologist: She's doing very well. I'd like to arrange an MRI of the small bowel in the next three months to ensure ongoing mucosal healing at the terminal ileum. She does not require any changes to therapy at this stage. No GP action is required — I'll continue to manage her in my clinic. Follow-up with me in 12 months or sooner if any flare.\n\nPatient: That's reassuring, thank you.",
+  "requiredFacts": {
+    "medications": [
+      "azathioprine 150 mg daily",
+      "azathioprine"
+    ],
+    "diagnoses": [
+      "Crohn's disease",
+      "terminal ileum",
+      "clinical remission"
+    ],
+    "investigations": [
+      "faecal calprotectin 45",
+      "CRP 2",
+      "MRI small bowel"
+    ],
+    "followUp": [
+      "MRI small bowel in 3 months",
+      "follow-up in 12 months"
+    ],
+    "gpActions": []
+  },
+  "forbiddenFacts": [
+    "rectal bleeding",
+    "active flare",
+    "steroid",
+    "biologic",
+    "joint symptoms",
+    "skin lesions",
+    "action required",
+    "refer"
+  ],
+  "allowedPhrasings": {
+    "azathioprine 150 mg daily": [
+      "azathioprine 150mg once daily",
+      "azathioprine 150 mg od"
+    ],
+    "faecal calprotectin 45": [
+      "calprotectin 45",
+      "faecal calprotectin of 45 mcg/g",
+      "fecal calprotectin 45"
+    ],
+    "MRI small bowel in 3 months": [
+      "MRI small bowel within 3 months",
+      "MRI of the small bowel in approximately 3 months",
+      "small bowel MRI planned"
+    ],
+    "clinical remission": [
+      "in remission",
+      "disease in remission"
+    ]
+  },
+  "requiredSections": ["Summary", "Impression and Plan"],
+  "gpActionExpected": "no_action",
+  "clinicianReviewed": false,
+  "promptVersion": "1.0",
+  "createdAt": "2026-07-12T00:00:00Z"
+}

@@ -1,0 +1,73 @@
+{
+  "id": "fixture-05-eoe-review",
+  "description": "EoE review consult using detailed mode. Complex consultation — multiple active problems, treatment response, dietary restrictions, ongoing dose titration. Tests: detailed mode completeness, multiple active problem handling, dose titration, EoE routing (REVIEW_LETTER not FUNCTIONAL_REVIEW_LETTER).",
+  "patientName": "Benjamin Kowalski",
+  "patientId": "SYNTH-005",
+  "consultOptions": {
+    "noteType": "review_consult",
+    "letterType": "review",
+    "templateType": "eoe",
+    "detailLevel": "detailed",
+    "pronouns": "he_him"
+  },
+  "transcript": "Gastroenterologist: Good afternoon Benjamin. Last time I saw you was about eight months ago. You've had eosinophilic oesophagitis confirmed on biopsy — eosinophil count was 25 per high-power field — and you've been on swallowed fluticasone 500 micrograms twice daily since then. How has the dysphagia been?\n\nPatient: It's improved quite a lot actually. I used to get food stuck every week. Now it's maybe once every three to four weeks. Still happening but less.\n\nGastroenterologist: Good, that's a partial response. He also has an associated atopic background — asthma and allergic rhinitis — and he's on a dairy and wheat free diet under the guidance of his dietitian Sarah Chen. He's maintained his weight. Let me look at his recent bloods — eosinophil count on blood is borderline elevated at 0.6 times ten to the nine per litre. I want to repeat the endoscopy with biopsies to formally assess mucosal response.\n\nPatient: Will I need a higher dose?\n\nGastroenterologist: Possibly. If the repeat biopsy still shows greater than 15 eosinophils per high-power field despite the fluticasone, I'll consider increasing the dose to 500 micrograms three times daily, or discussing a proton pump inhibitor trial to see if there's a PPI-responsive component. He also mentioned some reflux symptoms have emerged over the past two months — mild, post-prandial — which may represent a PPI-responsive EoE subtype or co-existing GORD.\n\nPatient: I'm worried about long-term steroid use.\n\nGastroenterologist: That's a reasonable concern. Swallowed topical steroids at this dose have a low systemic absorption profile, but it's worth discussing. I have arranged a repeat OGD for next month. Depending on those biopsy results I will review his management. No immediate GP action required at this stage. I'll continue to manage his EoE in my clinic.",
+  "requiredFacts": {
+    "medications": [
+      "swallowed fluticasone 500 mcg twice daily",
+      "fluticasone",
+      "dairy and wheat free diet"
+    ],
+    "diagnoses": [
+      "eosinophilic oesophagitis",
+      "EoE",
+      "dysphagia",
+      "atopic background",
+      "asthma",
+      "allergic rhinitis"
+    ],
+    "investigations": [
+      "eosinophil count 25 per high-power field",
+      "repeat endoscopy with biopsies",
+      "blood eosinophil count 0.6"
+    ],
+    "followUp": [
+      "repeat OGD next month",
+      "biopsy results to guide management"
+    ],
+    "gpActions": []
+  },
+  "forbiddenFacts": [
+    "food impaction",
+    "stricture dilation",
+    "weight loss",
+    "immunosuppressant",
+    "systemic steroids",
+    "Sarah Chen",
+    "action required"
+  ],
+  "allowedPhrasings": {
+    "swallowed fluticasone 500 mcg twice daily": [
+      "swallowed fluticasone 500mcg BD",
+      "swallowed fluticasone 500 micrograms twice daily",
+      "topical fluticasone 500 mcg twice daily"
+    ],
+    "eosinophilic oesophagitis": [
+      "EoE",
+      "eosinophilic esophagitis"
+    ],
+    "repeat endoscopy with biopsies": [
+      "repeat OGD with biopsies",
+      "repeat upper endoscopy and biopsy",
+      "repeat gastroscopy with mucosal biopsies"
+    ],
+    "blood eosinophil count 0.6": [
+      "peripheral eosinophilia 0.6 × 10⁹/L",
+      "eosinophil count borderline elevated"
+    ]
+  },
+  "requiredSections": ["Summary", "Impression and Plan"],
+  "gpActionExpected": "no_action",
+  "clinicianReviewed": false,
+  "promptVersion": "1.0",
+  "createdAt": "2026-07-12T00:00:00Z"
+}

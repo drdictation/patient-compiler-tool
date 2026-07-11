@@ -261,8 +261,8 @@ export function CreateDocumentDialog({
 
                                 <div className="flex items-center justify-between border-t pt-3">
                                     <div className="space-y-0.5 pr-4">
-                                        <Label htmlFor="complex-letter" className="text-sm font-semibold text-slate-700">Complex Case (Verbose Letter)</Label>
-                                        <p className="text-[10px] text-slate-500">Appends detailed pathophysiological pathways, psychosocial complexities, and medicolegal reasoning to the letter</p>
+                                        <Label htmlFor="complex-letter" className="text-sm font-semibold text-slate-700">Detailed letter (transcript-supported)</Label>
+                                        <p className="text-[10px] text-slate-500">Produces a more comprehensive letter covering all transcript-supported clinical details</p>
                                     </div>
                                     <Switch
                                         id="complex-letter"
