@@ -42,12 +42,20 @@
 - **Unresolved Risks / Follow-up Items**: None.
 
 ### 4. Letter validator, finish-reason metadata, and UI warnings
-- **Status**: Not Started
-- **Date Completed**: N/A
+- **Status**: Complete
+- **Date Completed**: 2026-07-12
 - **Commit Hash**: N/A
-- **Files Changed**: N/A
-- **Tests Run**: N/A
-- **Unresolved Risks / Follow-up Items**: N/A
+- **Files Changed**:
+  - `src/lib/generation/letter-validation.ts` (created: fatal and warning validation rules)
+  - `src/lib/generation/letter-validation.test.ts` (created: test suite for validation fatal and warning rules)
+  - `src/lib/generation/contracts.ts` (modified: added warnings property and extended error types)
+  - `src/lib/llm.ts` (modified: parsed and returned Gemini candidate safety and finish reasons)
+  - `src/app/actions.ts` (modified: integrated validation rules in generateClinicalDocuments and generateAdditionalDocument actions)
+  - `src/components/smart-note-dialog.tsx` (modified: added warning state and custom Footer acknowledge layouts)
+  - `src/components/create-document-dialog.tsx` (modified: added warnings display logic and footer layout changes)
+  - `src/lib/generation/concurrency.test.ts` (modified: updated mock letters to pass validation)
+- **Tests Run**: `node --import tsx --env-file=.env --test src/lib/generation/*.test.ts` (49 passing tests)
+- **Unresolved Risks / Follow-up Items**: None.
 
 ### 5. Instruction/data separation and caller migration
 - **Status**: Not Started

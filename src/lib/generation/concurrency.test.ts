@@ -104,7 +104,17 @@ test('Parallel Clinical Document Generation', async (t) => {
                         {
                             content: {
                                 parts: [
-                                    { text: `Generated content from mock for ${input.toString()}` }
+                                    {
+                                        text: `
+# Summary
+The patient had a follow-up consultation today. They are feeling well.
+
+# Impression and Plan
+We will continue monitoring the current plan.
+Kind regards,
+Dr. Smith
+                                        `.trim()
+                                    }
                                 ]
                             }
                         }

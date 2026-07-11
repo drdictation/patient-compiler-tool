@@ -66,6 +66,7 @@ export function CreateDocumentDialog({
     const [isComplex, setIsComplex] = useState(false);
     const [pronouns, setPronouns] = useState<'auto' | 'he_him' | 'she_her' | 'they_them'>('auto');
     const [model, setModel] = useState<SmartNoteModel>('gemini-3-flash-preview');
+    const [warnings, setWarnings] = useState<string[]>([]);
 
     const handleGenerate = () => {
         if (!selectedEncounterId) {
@@ -94,10 +95,15 @@ export function CreateDocumentDialog({
 
                 if (result.success) {
                     toast.success(`Generated ${documentType === 'referral_letter' ? 'Referral Letter' : 'Patient Summary'} successfully`);
-                    setOpen(false);
-                    resetForm();
-                    router.refresh();
-                    if (onSuccess) onSuccess();
+                    
+                    if (result.warnings && result.warnings.length > 0) {
+                        setWarnings(result.warnings);
+                    } else {
+                        setOpen(false);
+                        resetForm();
+                        router.refresh();
+                        if (onSuccess) onSuccess();
+                    }
                 } else {
                     toast.error(result.error || 'Failed to generate document');
                 }
@@ -117,6 +123,7 @@ export function CreateDocumentDialog({
         setIsComplex(false);
         setPronouns('auto');
         setModel('gemini-3-flash-preview');
+        setWarnings([]);
     };
 
     // Date formatting helper
@@ -303,19 +310,41 @@ export function CreateDocumentDialog({
                     </div>
                 )}
 
+                {/* Warnings Display */}
+                {warnings.length > 0 && (
+                    <div className="border border-amber-200 rounded-lg p-4 bg-amber-50 text-amber-800 space-y-2 mt-4">
+                        <div className="font-semibold flex items-center text-sm">
+                            <span className="mr-2">⚠️</span> Clinical Validation Warnings
+                        </div>
+                        <ul className="list-disc pl-5 text-xs space-y-1">
+                            {warnings.map((w, idx) => (
+                                <li key={idx}>{w}</li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+
                 <DialogFooter className="border-t pt-4">
-                    <Button variant="outline" onClick={() => setOpen(false)} disabled={isPending}>
-                        Cancel
-                    </Button>
-                    {encounters.length > 0 && (
-                        <Button
-                            onClick={handleGenerate}
-                            disabled={isPending}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2 font-medium"
-                        >
-                            {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                            {isPending ? 'Generating...' : 'Generate Document'}
+                    {warnings.length > 0 ? (
+                        <Button onClick={() => { setOpen(false); resetForm(); router.refresh(); if (onSuccess) onSuccess(); }}>
+                            Acknowledge & Close
                         </Button>
+                    ) : (
+                        <>
+                            <Button variant="outline" onClick={() => setOpen(false)} disabled={isPending}>
+                                Cancel
+                            </Button>
+                            {encounters.length > 0 && (
+                                <Button
+                                    onClick={handleGenerate}
+                                    disabled={isPending}
+                                    className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2 font-medium"
+                                >
+                                    {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                                    {isPending ? 'Generating...' : 'Generate Document'}
+                                </Button>
+                            )}
+                        </>
                     )}
                 </DialogFooter>
             </DialogContent>

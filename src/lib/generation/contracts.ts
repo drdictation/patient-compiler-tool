@@ -61,6 +61,7 @@ export interface DocumentGenerationResult {
     artifactId?: string;
     content?: string;
     error?: GenerationError;
+    warnings?: string[];
 }
 
 export interface ClinicalGenerationResult {

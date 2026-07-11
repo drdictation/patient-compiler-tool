@@ -94,6 +94,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
     const [model, setModel] = useState<SmartNoteModel>('gemini-3-flash-preview');
     const [isComplex, setIsComplex] = useState(false);
     const [pronouns, setPronouns] = useState<'auto' | 'he_him' | 'she_her' | 'they_them'>('auto');
+    const [warnings, setWarnings] = useState<string[]>([]);
 
     // Generation status
     const [generationState, setGenerationState] = useState<GenerationState>({
@@ -284,6 +285,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         setModel('gemini-3-flash-preview');
         setIsComplex(false);
         setPronouns('auto');
+        setWarnings([]);
         setGenerationState({ transcript: 'idle', note: 'idle', letter: 'idle', tasks: 'idle' });
         setRecordingDuration(0);
         setAudioSizeMB(0);
@@ -436,17 +438,25 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                     errors.forEach(err => toast.error(err));
                 }
 
+                let hasWarnings = false;
+                if (clinicalResult.letter?.warnings && clinicalResult.letter.warnings.length > 0) {
+                    setWarnings(clinicalResult.letter.warnings);
+                    hasWarnings = true;
+                }
+
                 if (successArtifacts.length > 0) {
                     toast.success(`Created ${successArtifacts.join(' and ')} successfully`);
                     
-                    // Do not block dialog close or router refresh for the tasks promise
-                    setTimeout(() => {
-                        if (isMountedRef.current) {
-                            setOpen(false);
-                            resetState();
-                        }
-                        router.refresh();
-                    }, 1500);
+                    if (!hasWarnings) {
+                        // Do not block dialog close or router refresh for the tasks promise
+                        setTimeout(() => {
+                            if (isMountedRef.current) {
+                                setOpen(false);
+                                resetState();
+                            }
+                            router.refresh();
+                        }, 1500);
+                    }
                 }
             } catch (e: any) {
                 console.error('Clinical generation failed:', e);
@@ -927,16 +937,37 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                                 <StatusIndicator status={generationState.tasks} label="Extracting tasks" />
                             </div>
                         )}
+                    {/* Warnings Display */}
+                    {warnings.length > 0 && (
+                        <div className="border border-amber-200 rounded-lg p-4 bg-amber-50 text-amber-800 space-y-2 mt-4">
+                            <div className="font-semibold flex items-center text-sm">
+                                <span className="mr-2">⚠️</span> Clinical Validation Warnings
+                            </div>
+                            <ul className="list-disc pl-5 text-xs space-y-1">
+                                {warnings.map((w, idx) => (
+                                    <li key={idx}>{w}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
                 </div>
 
                 <DialogFooter className="mt-4">
-                    <Button variant="outline" onClick={() => setOpen(false)} disabled={isPreparing || isGeneratingClinical}>
-                        Cancel
-                    </Button>
-                    <Button onClick={handleGenerate} disabled={isPreparing || isGeneratingClinical || !transcript.trim()}>
-                        {(isPreparing || isGeneratingClinical) && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                        {isPreparing ? 'Preparing...' : isGeneratingClinical ? 'Generating Documents...' : 'Generate Smart Note'}
-                    </Button>
+                    {warnings.length > 0 ? (
+                        <Button onClick={() => { setOpen(false); resetState(); router.refresh(); }}>
+                            Acknowledge & Close
+                        </Button>
+                    ) : (
+                        <>
+                            <Button variant="outline" onClick={() => setOpen(false)} disabled={isPreparing || isGeneratingClinical}>
+                                Cancel
+                            </Button>
+                            <Button onClick={handleGenerate} disabled={isPreparing || isGeneratingClinical || !transcript.trim()}>
+                                {(isPreparing || isGeneratingClinical) && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                                {isPreparing ? 'Preparing...' : isGeneratingClinical ? 'Generating Documents...' : 'Generate Smart Note'}
+                            </Button>
+                        </>
+                    )}
                 </DialogFooter>
             </DialogContent>
         </Dialog>

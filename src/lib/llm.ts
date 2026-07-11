@@ -617,6 +617,10 @@ export interface SmartNoteGenerationResult {
         input_tokens: number;
         output_tokens: number;
     };
+    finishReason?: string;
+    blocked?: boolean;
+    blockReason?: string;
+    model?: string;
 }
 
 /**
@@ -697,7 +701,13 @@ export async function generateFromPrompt(
         });
 
         const data = await res.json();
-        const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const candidate = data.candidates?.[0];
+        const content = candidate?.content?.parts?.[0]?.text || '';
+        const finishReason = candidate?.finishReason || 'UNKNOWN';
+        const isSafetyBlocked = finishReason === 'SAFETY' || finishReason === 'RECITATION' || finishReason === 'OTHER';
+        const blocked = !candidate || isSafetyBlocked;
+        const blockReason = isSafetyBlocked ? `Finish reason is ${finishReason}` : undefined;
+
         const usage = data.usageMetadata || {};
         inputTokens = usage.promptTokenCount || 0;
         outputTokens = usage.candidatesTokenCount || 0;
@@ -727,7 +737,11 @@ export async function generateFromPrompt(
             usage: {
                 input_tokens: inputTokens,
                 output_tokens: outputTokens
-            }
+            },
+            finishReason,
+            blocked,
+            blockReason,
+            model: apiModel
         };
 
     } catch (e: any) {

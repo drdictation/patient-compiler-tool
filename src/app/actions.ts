@@ -479,6 +479,7 @@ import { PROMPTS } from '@/lib/prompts';
 import { postProcessLetter } from '@/lib/letter-post-processing';
 import { PreparedSmartNoteContext, GenerationException, ClinicalGenerationResult, TaskGenerationResult } from '@/lib/generation/contracts';
 import { normaliseTranscript, validateTranscript, hashTranscript } from '@/lib/generation/transcript';
+import { validateGeneratedLetter } from '@/lib/generation/letter-validation';
 import * as crypto from 'crypto';
 
 export interface SmartNoteOptions {
@@ -755,7 +756,7 @@ export async function generateClinicalDocuments(context: PreparedSmartNoteContex
                 const promptKey = context.noteType === 'new_consult' ? 'NEW_CONSULT_NOTE' : 'REVIEW_CONSULT_NOTE';
                 const prompt = PROMPTS[promptKey];
 
-                const { content } = await generateFromPrompt(
+                const genResult = await generateFromPrompt(
                     context.normalisedTranscript,
                     context.patientName,
                     prompt,
@@ -766,6 +767,14 @@ export async function generateClinicalDocuments(context: PreparedSmartNoteContex
                     context.requestId
                 );
 
+                if (genResult.blocked) {
+                    throw new Error(`Generation was blocked by the provider: ${genResult.blockReason || 'Safety block'}`);
+                }
+                if (genResult.finishReason && genResult.finishReason !== 'STOP' && genResult.finishReason !== 'UNKNOWN') {
+                    throw new Error(`Incomplete generation: provider reported finish reason as "${genResult.finishReason}"`);
+                }
+
+                const content = genResult.content;
                 const artifactId = await saveArtifact(context.encounterId, 'INTERNAL_NOTE', content);
                 result.note = {
                     status: 'success',
@@ -818,7 +827,7 @@ export async function generateClinicalDocuments(context: PreparedSmartNoteContex
                     prompt = prompt + getPronounDirective(context.outputs.pronouns, context.patientName);
                 }
 
-                let { content } = await generateFromPrompt(
+                let genResult = await generateFromPrompt(
                     context.normalisedTranscript,
                     context.patientName,
                     prompt,
@@ -829,13 +838,35 @@ export async function generateClinicalDocuments(context: PreparedSmartNoteContex
                     context.requestId
                 );
 
-                content = formatSubtitlesAndSignoff(content);
-                const artifactId = await saveArtifact(context.encounterId, 'REFERRER_LETTER', content);
-                result.letter = {
-                    status: 'success',
-                    artifactId,
-                    content
-                };
+                let content = formatSubtitlesAndSignoff(genResult.content);
+
+                const validation = validateGeneratedLetter({
+                    text: content,
+                    authoritativePatientName: context.patientName,
+                    transcript: context.normalisedTranscript,
+                    letterType: type,
+                    templateType: template,
+                    metadata: genResult,
+                    expectedPronouns: context.outputs.pronouns
+                });
+
+                if (!validation.valid) {
+                    result.letter = {
+                        status: 'failed',
+                        error: {
+                            code: 'VALIDATION_FAILED',
+                            message: 'Validation failed:\n- ' + validation.fatalErrors.join('\n- ')
+                        }
+                    };
+                } else {
+                    const artifactId = await saveArtifact(context.encounterId, 'REFERRER_LETTER', content);
+                    result.letter = {
+                        status: 'success',
+                        artifactId,
+                        content,
+                        warnings: validation.warnings.length > 0 ? validation.warnings : undefined
+                    };
+                }
             } catch (e: any) {
                 console.error('Letter generation failed:', e);
                 result.letter = {
@@ -1450,7 +1481,7 @@ export interface AdditionalDocumentOptions {
  */
 export async function generateAdditionalDocument(
     options: AdditionalDocumentOptions
-): Promise<{ success: boolean; artifactId?: string; error?: string }> {
+): Promise<{ success: boolean; artifactId?: string; error?: string; warnings?: string[] }> {
     const { patientId, encounterId, documentType, clinicianType, additionalContext, includePatientHistory, model, isComplex, pronouns } = options;
     try {
         // 1. Fetch patient display name
@@ -1629,7 +1660,7 @@ export async function generateAdditionalDocument(
             .replaceAll('{{ADDITIONAL_CONTEXT}}', additionalContext || 'None provided.');
 
         // 6. Generate content via Gemini
-        let { content } = await generateFromPrompt(
+        let genResult = await generateFromPrompt(
             consultDetails,
             patientName,
             fullPrompt,
@@ -1639,12 +1670,41 @@ export async function generateAdditionalDocument(
             formattedDate
         );
 
-        if (!content) {
+        if (!genResult.content) {
             return { success: false, error: 'Model generated empty content.' };
         }
 
+        let content = genResult.content;
         if (documentType === 'referral_letter') {
             content = formatSubtitlesAndSignoff(content);
+        }
+
+        let warnings: string[] = [];
+        if (documentType === 'referral_letter') {
+            const validation = validateGeneratedLetter({
+                text: content,
+                authoritativePatientName: patientName,
+                transcript: consultDetails,
+                letterType: 'new',
+                templateType: 'general',
+                metadata: genResult,
+                expectedPronouns: pronouns
+            });
+
+            if (!validation.valid) {
+                return {
+                    success: false,
+                    error: 'Validation failed:\n- ' + validation.fatalErrors.join('\n- ')
+                };
+            }
+            warnings = validation.warnings;
+        } else {
+            if (genResult.blocked) {
+                return { success: false, error: `Generation was blocked by the provider: ${genResult.blockReason || 'Safety block'}` };
+            }
+            if (genResult.finishReason && genResult.finishReason !== 'STOP' && genResult.finishReason !== 'UNKNOWN') {
+                return { success: false, error: `Incomplete generation: provider reported finish reason as "${genResult.finishReason}"` };
+            }
         }
 
         // 7. Save artifact
@@ -1653,7 +1713,11 @@ export async function generateAdditionalDocument(
         revalidatePath('/patient/[id]');
         revalidatePath('/');
 
-        return { success: true, artifactId };
+        return {
+            success: true,
+            artifactId,
+            warnings: warnings.length > 0 ? warnings : undefined
+        };
     } catch (err: any) {
         console.error('Failed to generate additional document:', err);
         return { success: false, error: err.message || 'Generation failed' };
