@@ -274,7 +274,21 @@ Respond ONLY with valid JSON in this exact format:
 }`;
 
     try {
-        const response = await generateFromPrompt(content, 'AI', prompt, 'gemini-3.1-flash-lite-preview', undefined, 'patient_matching');
+        const systemInstructions = prompt
+            .replace('{{TRANSCRIPT}}', '')
+            .replaceAll('{{PATIENT_NAME}}', 'AI');
+
+        const response = await generateFromPrompt({
+            systemInstructions,
+            transcript: content,
+            metadata: {
+                patientName: 'AI',
+                documentType: 'patient_matching',
+                templateType: 'general'
+            },
+            model: 'gemini-3.1-flash-lite-preview',
+            purpose: 'patient_matching'
+        });
         const parsed = JSON.parse(response.content);
 
         return {

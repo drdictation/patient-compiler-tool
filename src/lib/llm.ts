@@ -634,39 +634,10 @@ export interface SmartNoteGenerationResult {
  * @param model - The Gemini model to use
  */
 export async function generateFromPrompt(
-    requestOrTranscript: string | GenerationRequest,
-    patientNameLegacy?: string,
-    promptLegacy?: string,
-    modelLegacy?: SmartNoteModel,
-    patientIdLegacy?: string,
-    purposeLegacy: string = 'smart_note',
-    dateLegacy?: string,
-    requestIdLegacy?: string
+    request: GenerationRequest
 ): Promise<SmartNoteGenerationResult> {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error('Missing GEMINI_API_KEY');
-
-    let request: GenerationRequest;
-    if (typeof requestOrTranscript === 'object' && requestOrTranscript !== null) {
-        request = requestOrTranscript;
-    } else {
-        // Backwards compatibility legacy adapter
-        request = {
-            systemInstructions: promptLegacy || '',
-            transcript: requestOrTranscript,
-            metadata: {
-                patientName: patientNameLegacy || '',
-                date: dateLegacy,
-                documentType: 'unknown',
-                templateType: 'unknown'
-            },
-            model: modelLegacy || 'gemini-2.5-flash',
-            purpose: purposeLegacy,
-            patientId: patientIdLegacy,
-            requestId: requestIdLegacy
-        };
-    }
-
     // Map friendly names to API model names
     const modelMap: Record<SmartNoteModel, string> = {
         'gemini-2.5-flash': 'gemini-2.5-flash',
