@@ -131,13 +131,44 @@ Dr. Smith
         assert.ok(result.fatalErrors.some(err => err.includes('No substantial body prose')));
     });
 
-    await t.test('rejects example name leakages', () => {
+    await t.test('rejects example name leakages in the opening sentence', () => {
         const result = validateGeneratedLetter({
             ...defaultInput,
-            text: defaultInput.text + '\nHe mentions John Doe in the report.'
+            text: `
+# Summary
+The patient had a follow-up consultation today. They are feeling well.
+
+# Impression and Plan
+We will continue monitoring the current plan.
+Kind regards,
+Dr. Smith
+
+I had the pleasure of conducting an in-person review with Amy.
+            `.trim()
         });
         assert.strictEqual(result.valid, false);
-        assert.ok(result.fatalErrors.some(err => err.includes('Example patient name leakage detected')));
+        assert.ok(result.fatalErrors.some(err => err.includes('Example patient name leakage detected in opening')));
+    });
+
+    await t.test('accepts example names or individual surnames in clinician headings or body details', () => {
+        const result = validateGeneratedLetter({
+            ...defaultInput,
+            text: `
+# Summary
+The patient had a follow-up consultation today. They are feeling well.
+
+# Impression and Plan
+We will continue monitoring the current plan and discuss with Dr. Johnson.
+Kind regards,
+Dr. Smith
+
+Dear Dr. Johnson,
+
+I had the pleasure of conducting an in-person review with Jane.
+            `.trim(),
+            authoritativePatientName: 'Jane Doe'
+        });
+        assert.strictEqual(result.valid, true);
     });
 
     await t.test('rejects conflicting GP actions', () => {

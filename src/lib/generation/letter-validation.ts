@@ -1,4 +1,5 @@
 import { SmartNoteGenerationResult } from '../llm';
+import { EXAMPLE_PATIENT_NAMES } from '../prompts';
 
 export interface LetterValidationInput {
     text: string;
@@ -16,16 +17,6 @@ export interface LetterValidationResult {
     warnings: string[];
 }
 
-const EXAMPLE_NAMES = [
-    'John Doe',
-    'Jane Smith',
-    'Sarah Jenkins',
-    'Robert Johnson',
-    'Sarah',
-    'Jenkins',
-    'Robert',
-    'Johnson'
-];
 
 /**
  * Validates a generated letter against fatal clinical safety and formatting rules,
@@ -133,17 +124,21 @@ export function validateGeneratedLetter(input: LetterValidationInput): LetterVal
         }
     }
 
-    // 8. Example patient name leakage
-    for (const name of EXAMPLE_NAMES) {
-        const regex = new RegExp(`\\b${name}\\b`, 'i');
-        if (regex.test(text)) {
-            // Only alert if this name is NOT part of the patient's real name AND NOT in transcript
-            const nameLower = name.toLowerCase();
-            const matchesPatient = patientNameLower.includes(nameLower);
-            const matchesTranscript = transcriptLower.includes(nameLower);
-            if (!matchesPatient && !matchesTranscript) {
-                fatalErrors.push(`Example patient name leakage detected ("${name}").`);
-                break;
+    // 8. Example patient name leakage in body opening (first paragraph containing "conducting")
+    const paragraphs = trimmedText.split('\n').map(p => p.trim()).filter(Boolean);
+    const openingParagraph = paragraphs.find(p => p.toLowerCase().includes('pleasure of conducting') || p.toLowerCase().includes('conducting a')) || '';
+
+    if (openingParagraph) {
+        for (const name of EXAMPLE_PATIENT_NAMES) {
+            const regex = new RegExp(`\\b${name}\\b`, 'i');
+            if (regex.test(openingParagraph)) {
+                const nameLower = name.toLowerCase();
+                const matchesPatient = patientNameLower.includes(nameLower);
+                const matchesTranscript = transcriptLower.includes(nameLower);
+                if (!matchesPatient && !matchesTranscript) {
+                    fatalErrors.push(`Example patient name leakage detected in opening ("${name}").`);
+                    break;
+                }
             }
         }
     }

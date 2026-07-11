@@ -70,3 +70,5 @@ export type SmartNotePromptKey = keyof typeof SMART_NOTE_PROMPTS;
  * Used by the Smart Note feature to auto-generate a task list.
  */
 export { TASK_EXTRACTION_PROMPT };
+
+export const EXAMPLE_PATIENT_NAMES = ['Amy', 'Bailey', 'Margot', 'Michael', 'Amanda', 'Richard', 'Phoebe'];
