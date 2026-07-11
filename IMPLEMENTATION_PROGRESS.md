@@ -58,12 +58,18 @@
 - **Unresolved Risks / Follow-up Items**: None.
 
 ### 5. Instruction/data separation and caller migration
-- **Status**: Not Started
-- **Date Completed**: N/A
+- **Status**: Complete
+- **Date Completed**: 2026-07-12
 - **Commit Hash**: N/A
-- **Files Changed**: N/A
-- **Tests Run**: N/A
-- **Unresolved Risks / Follow-up Items**: N/A
+- **Files Changed**:
+  - `src/lib/prompts/types.ts` (created: defined GenerationRequest configuration schema)
+  - `src/lib/prompts.ts` (modified: exported GenerationRequest configuration)
+  - `src/lib/llm.ts` (modified: refactored generateFromPrompt to accept config and pass separated instructions/data)
+  - `src/app/actions.ts` (modified: migrated all 5 generateFromPrompt callers to the new request schema)
+  - `scripts/prompt_tuner.py` (modified: updated model letter generation to separate instructions and transcript source)
+  - `src/lib/generation/prompt-injection.test.ts` (created: test suite verifying separation logic and injection resilience)
+- **Tests Run**: `node --import tsx --env-file=.env --test src/lib/generation/*.test.ts` (53 passing tests)
+- **Unresolved Risks / Follow-up Items**: None.
 
 ### 6. Routing correction and safe detailed-mode wording
 - **Status**: Not Started

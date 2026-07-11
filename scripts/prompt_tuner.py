@@ -131,8 +131,27 @@ def _post_gemini(prompt_text: str, model: str, api_key: str) -> dict:
     return resp.json()
 
 
-def _generate_letter(prompt_text: str, model: str, api_key: str) -> str:
-    data = _post_gemini(prompt_text, model, api_key)
+def _generate_letter(system_instructions: str, transcript: str, patient_name: str, model: str, api_key: str) -> str:
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+    cleaned_system = system_instructions.replace("{{TRANSCRIPT}}", "")
+    if patient_name:
+        cleaned_system = cleaned_system.replace("{{PATIENT_NAME}}", patient_name)
+    parts = []
+    metadata_text = f"Metadata:\n- Patient Name: {patient_name or 'Unknown'}\n\n"
+    parts.append({"text": metadata_text})
+    parts.append({
+        "text": f"=== BEGIN CLINICAL TRANSCRIPT SOURCE ===\n{transcript}\n=== END CLINICAL TRANSCRIPT SOURCE ==="
+    })
+    payload = {
+        "contents": [{"parts": parts}],
+        "systemInstruction": {
+            "parts": [{"text": cleaned_system}]
+        }
+    }
+    resp = requests.post(url, headers={"Content-Type": "application/json"}, data=json.dumps(payload), timeout=120)
+    if resp.status_code >= 400:
+        raise RuntimeError(f"Gemini API error {resp.status_code}: {resp.text}")
+    data = resp.json()
     output_text = _extract_gemini_text(data)
     if not output_text:
         raise RuntimeError("No output text found in Gemini response.")
@@ -196,14 +215,9 @@ def main() -> int:
         return 1
 
     while True:
-        filled_prompt = current_prompt
-        if patient_name:
-            filled_prompt = filled_prompt.replace("{{PATIENT_NAME}}", patient_name)
-        filled_prompt = filled_prompt.replace("{{TRANSCRIPT}}", transcript)
-
         print("\n=== MODEL OUTPUT ===\n")
         try:
-            output = _generate_letter(filled_prompt, args.model, api_key)
+            output = _generate_letter(current_prompt, transcript, patient_name, args.model, api_key)
         except Exception as exc:
             print(f"Generation failed: {exc}", file=sys.stderr)
             return 1

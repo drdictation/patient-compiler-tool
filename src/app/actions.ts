@@ -755,17 +755,25 @@ export async function generateClinicalDocuments(context: PreparedSmartNoteContex
             try {
                 const promptKey = context.noteType === 'new_consult' ? 'NEW_CONSULT_NOTE' : 'REVIEW_CONSULT_NOTE';
                 const prompt = PROMPTS[promptKey];
+                const systemInstructions = prompt
+                    .replace('{{TRANSCRIPT}}', '')
+                    .replaceAll('{{PATIENT_NAME}}', context.patientName)
+                    .replaceAll('{{DATE}}', context.formattedDate || '');
 
-                const genResult = await generateFromPrompt(
-                    context.normalisedTranscript,
-                    context.patientName,
-                    prompt,
-                    context.model,
-                    context.patientId,
-                    'smart_note_consult',
-                    context.formattedDate,
-                    context.requestId
-                );
+                const genResult = await generateFromPrompt({
+                    systemInstructions,
+                    transcript: context.normalisedTranscript,
+                    metadata: {
+                        patientName: context.patientName,
+                        date: context.formattedDate,
+                        documentType: 'smart_note',
+                        templateType: context.noteType
+                    },
+                    model: context.model,
+                    purpose: 'smart_note_consult',
+                    patientId: context.patientId,
+                    requestId: context.requestId
+                });
 
                 if (genResult.blocked) {
                     throw new Error(`Generation was blocked by the provider: ${genResult.blockReason || 'Safety block'}`);
@@ -827,16 +835,26 @@ export async function generateClinicalDocuments(context: PreparedSmartNoteContex
                     prompt = prompt + getPronounDirective(context.outputs.pronouns, context.patientName);
                 }
 
-                let genResult = await generateFromPrompt(
-                    context.normalisedTranscript,
-                    context.patientName,
-                    prompt,
-                    context.model,
-                    context.patientId,
-                    'smart_note_letter',
-                    context.formattedDate,
-                    context.requestId
-                );
+                const systemInstructions = prompt
+                    .replace('{{TRANSCRIPT}}', '')
+                    .replaceAll('{{PATIENT_NAME}}', context.patientName)
+                    .replaceAll('{{DATE}}', context.formattedDate || '');
+
+                let genResult = await generateFromPrompt({
+                    systemInstructions,
+                    transcript: context.normalisedTranscript,
+                    metadata: {
+                        patientName: context.patientName,
+                        date: context.formattedDate,
+                        documentType: 'referrer_letter',
+                        templateType: template,
+                        pronouns: context.outputs.pronouns
+                    },
+                    model: context.model,
+                    purpose: 'smart_note_letter',
+                    patientId: context.patientId,
+                    requestId: context.requestId
+                });
 
                 let content = formatSubtitlesAndSignoff(genResult.content);
 
@@ -981,15 +999,24 @@ export async function createSmartNote(options: SmartNoteOptions): Promise<SmartN
                 const promptKey = context.noteType === 'new_consult' ? 'NEW_CONSULT_NOTE' : 'REVIEW_CONSULT_NOTE';
                 const prompt = PROMPTS[promptKey];
 
-                const { content } = await generateFromPrompt(
-                    context.normalisedTranscript,
-                    context.patientName,
-                    prompt,
-                    context.model, // Use user-selected model
-                    context.patientId,
-                    'smart_note_consult',
-                    context.formattedDate
-                );
+                const systemInstructions = prompt
+                    .replace('{{TRANSCRIPT}}', '')
+                    .replaceAll('{{PATIENT_NAME}}', context.patientName)
+                    .replaceAll('{{DATE}}', context.formattedDate || '');
+
+                const { content } = await generateFromPrompt({
+                    systemInstructions,
+                    transcript: context.normalisedTranscript,
+                    metadata: {
+                        patientName: context.patientName,
+                        date: context.formattedDate,
+                        documentType: 'smart_note',
+                        templateType: context.noteType
+                    },
+                    model: context.model,
+                    purpose: 'smart_note_consult',
+                    patientId: context.patientId
+                });
                 result.noteArtifactId = await saveArtifact(encounterId, 'INTERNAL_NOTE', content);
             } catch (e: any) {
                 result.errors.push(`Failed to generate note: ${e.message}`);
@@ -1026,15 +1053,25 @@ export async function createSmartNote(options: SmartNoteOptions): Promise<SmartN
                     prompt = prompt + getPronounDirective(context.outputs.pronouns, context.patientName);
                 }
 
-                let { content } = await generateFromPrompt(
-                    context.normalisedTranscript,
-                    context.patientName,
-                    prompt,
-                    context.model,
-                    context.patientId,
-                    'smart_note_letter',
-                    context.formattedDate
-                );
+                const systemInstructions = prompt
+                    .replace('{{TRANSCRIPT}}', '')
+                    .replaceAll('{{PATIENT_NAME}}', context.patientName)
+                    .replaceAll('{{DATE}}', context.formattedDate || '');
+
+                let { content } = await generateFromPrompt({
+                    systemInstructions,
+                    transcript: context.normalisedTranscript,
+                    metadata: {
+                        patientName: context.patientName,
+                        date: context.formattedDate,
+                        documentType: 'referrer_letter',
+                        templateType: template,
+                        pronouns: context.outputs.pronouns
+                    },
+                    model: context.model,
+                    purpose: 'smart_note_letter',
+                    patientId: context.patientId
+                });
                 content = formatSubtitlesAndSignoff(content);
                 result.letterArtifactId = await saveArtifact(encounterId, 'REFERRER_LETTER', content);
             } catch (e: any) {
@@ -1654,21 +1691,41 @@ export async function generateAdditionalDocument(
             targetArtifactType = 'PATIENT_SUMMARY';
         }
 
-        const fullPrompt = promptTemplate
+        const systemInstructions = promptTemplate
             .replaceAll('{{PATIENT_NAME}}', patientName)
-            .replaceAll('{{TRANSCRIPT}}', consultDetails)
-            .replaceAll('{{ADDITIONAL_CONTEXT}}', additionalContext || 'None provided.');
+            .replaceAll('{{CLINICIAN_TYPE}}', clinicianType || 'Specialist')
+            .replaceAll('{{PATIENT_HISTORY}}', '')
+            .replaceAll('{{TRANSCRIPT}}', '')
+            .replaceAll('{{ADDITIONAL_CONTEXT}}', '');
+
+        let taskInstructions = '';
+        if (documentType === 'referral_letter') {
+            taskInstructions += `Referral Details:\n`;
+            taskInstructions += `- Target Clinician Type: ${clinicianType || 'Specialist'}\n`;
+            if (historyText) {
+                taskInstructions += `- Factual Patient History Context:\n${historyText}\n\n`;
+            }
+        }
+        if (additionalContext) {
+            taskInstructions += `Additional Context or clinician intent:\n${additionalContext}\n\n`;
+        }
 
         // 6. Generate content via Gemini
-        let genResult = await generateFromPrompt(
-            consultDetails,
-            patientName,
-            fullPrompt,
+        let genResult = await generateFromPrompt({
+            systemInstructions,
+            taskInstructions: taskInstructions || undefined,
+            transcript: consultDetails,
+            metadata: {
+                patientName,
+                date: formattedDate,
+                documentType,
+                templateType: 'additional',
+                pronouns: pronouns || undefined
+            },
             model,
-            patientId,
-            `additional_doc_${documentType}`,
-            formattedDate
-        );
+            purpose: `additional_doc_${documentType}`,
+            patientId
+        });
 
         if (!genResult.content) {
             return { success: false, error: 'Model generated empty content.' };

@@ -72,3 +72,5 @@ export type SmartNotePromptKey = keyof typeof SMART_NOTE_PROMPTS;
 export { TASK_EXTRACTION_PROMPT };
 
 export const EXAMPLE_PATIENT_NAMES = ['Amy', 'Bailey', 'Margot', 'Michael', 'Amanda', 'Richard', 'Phoebe'];
+
+export * from './prompts/types';
