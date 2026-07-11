@@ -30,12 +30,16 @@
 
 
 ### 3. Timeout/retry policy and provider error mapping
-- **Status**: Not Started
-- **Date Completed**: N/A
+- **Status**: Complete
+- **Date Completed**: 2026-07-12
 - **Commit Hash**: N/A
-- **Files Changed**: N/A
-- **Tests Run**: N/A
-- **Unresolved Risks / Follow-up Items**: N/A
+- **Files Changed**:
+  - `src/lib/llm-request.ts` (created: fetch wrapper with named timeouts, error classification, retry limit, and retry-after limit)
+  - `src/lib/llm.ts` (modified: migrated callGemini, callGroq, and callOpenRouterGroq to fetchWithRetryAndTimeout, refactored extractGeneric fallback chain to support 1 fallback)
+  - `src/app/api/transcribe/route.ts` (modified: migrated Groq Whisper transcriptions fetch to use fetchWithRetryAndTimeout under TRANSCRIPTION budget)
+  - `src/lib/generation/llm-request.test.ts` (created: test suite for classification, timeout, and retry limit)
+- **Tests Run**: `node --import tsx --env-file=.env --test src/lib/generation/*.test.ts` (29 passing tests)
+- **Unresolved Risks / Follow-up Items**: None.
 
 ### 4. Letter validator, finish-reason metadata, and UI warnings
 - **Status**: Not Started

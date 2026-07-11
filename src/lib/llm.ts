@@ -1,5 +1,6 @@
 
 import { supabase } from './supabase';
+import { fetchWithRetryAndTimeout } from './llm-request';
 
 export type LLMProvider = 'gemini-flash' | 'gemini-flash-lite' | 'gemini-3.0-flash' | 'groq-llama-3' | 'groq-gpt-oss' | 'groq-llama-4';
 
@@ -135,7 +136,8 @@ async function callGemini(
     provider: LLMProvider,
     systemPrompt: string,
     patientId?: string,
-    purpose: string = 'generic'
+    purpose: string = 'generic',
+    requestId?: string
 ): Promise<ExtractionResponse> {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error('Missing GEMINI_API_KEY');
@@ -162,16 +164,18 @@ async function callGemini(
     let outputTokens = 0;
 
     try {
-        const res = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
+        const res = await fetchWithRetryAndTimeout({
+            operation: purpose.includes('extraction') ? 'TASK_EXTRACTION' : 'CLINICAL_GENERATION',
+            url,
+            init: {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            },
+            requestId,
+            model,
+            provider: 'gemini'
         });
-
-        if (!res.ok) {
-            const err = await res.text();
-            throw new Error(`Gemini API Error: ${res.status} ${err}`);
-        }
 
         const data = await res.json();
         const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -247,7 +251,8 @@ async function callGroq(
     provider: LLMProvider,
     systemPrompt: string,
     patientId?: string,
-    purpose: string = 'generic'
+    purpose: string = 'generic',
+    requestId?: string
 ): Promise<ExtractionResponse> {
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) throw new Error('Missing GROQ_API_KEY');
@@ -258,26 +263,28 @@ async function callGroq(
     let outputTokens = 0;
 
     try {
-        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
+        const res = await fetchWithRetryAndTimeout({
+            operation: purpose.includes('extraction') ? 'TASK_EXTRACTION' : 'CLINICAL_GENERATION',
+            url: 'https://api.groq.com/openai/v1/chat/completions',
+            init: {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: text }
+                    ],
+                    model: model,
+                    response_format: { type: "json_object" }
+                })
             },
-            body: JSON.stringify({
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: text }
-                ],
-                model: model,
-                response_format: { type: "json_object" }
-            })
+            requestId,
+            model,
+            provider: 'groq'
         });
-
-        if (!res.ok) {
-            const errText = await res.text();
-            throw new Error(`Groq API Error (${model}): ${res.status} ${errText}`);
-        }
 
         const data = await res.json();
         const content = data.choices?.[0]?.message?.content;
@@ -332,7 +339,8 @@ async function callOpenRouterGroq(
     provider: LLMProvider,
     systemPrompt: string,
     patientId: string | undefined,
-    purpose: string
+    purpose: string,
+    requestId?: string
 ): Promise<ExtractionResponse> {
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey || !provider.startsWith('groq')) throw new Error('Missing OPENROUTER_API_KEY');
@@ -341,26 +349,28 @@ async function callOpenRouterGroq(
     const startTime = Date.now();
 
     try {
-        const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
+        const res = await fetchWithRetryAndTimeout({
+            operation: purpose.includes('extraction') ? 'TASK_EXTRACTION' : 'CLINICAL_GENERATION',
+            url: 'https://openrouter.ai/api/v1/chat/completions',
+            init: {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model,
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: text }
+                    ],
+                    response_format: { type: 'json_object' }
+                })
             },
-            body: JSON.stringify({
-                model,
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: text }
-                ],
-                response_format: { type: 'json_object' }
-            })
+            requestId,
+            model,
+            provider: 'openrouter'
         });
-
-        if (!res.ok) {
-            const errText = await res.text();
-            throw new Error(`OpenRouter API Error (${model}): ${res.status} ${errText}`);
-        }
 
         const data = await res.json();
         const content = data.choices?.[0]?.message?.content;
@@ -483,7 +493,8 @@ async function extractGeneric<T>(
     provider: LLMProvider,
     systemPrompt: string,
     patientId?: string,
-    purpose: string = 'generic'
+    purpose: string = 'generic',
+    requestId?: string
 ): Promise<T> {
     const chain = getFallbackChain(provider);
     let lastError: Error | null = null;
@@ -493,15 +504,19 @@ async function extractGeneric<T>(
         const attemptPurpose = i === 0 ? purpose : `${purpose}_fallback_${i}`;
 
         try {
+            if (i > 0) {
+                console.warn(`Fallback triggered from ${provider} to ${attempt} for purpose ${purpose}. RequestId: ${requestId || 'unknown'}`);
+            }
+
             if (attempt === 'openrouter-groq') {
-                return await callOpenRouterGroq(text, provider, systemPrompt, patientId, attemptPurpose) as T;
+                return await callOpenRouterGroq(text, provider, systemPrompt, patientId, attemptPurpose, requestId) as T;
             }
 
             if (attempt.startsWith('gemini')) {
-                return await callGemini(text, attempt, systemPrompt, patientId, attemptPurpose) as T;
+                return await callGemini(text, attempt, systemPrompt, patientId, attemptPurpose, requestId) as T;
             }
 
-            return await callGroq(text, attempt, systemPrompt, patientId, attemptPurpose) as T;
+            return await callGroq(text, attempt, systemPrompt, patientId, attemptPurpose, requestId) as T;
         } catch (e: any) {
             lastError = e;
         }
@@ -511,15 +526,10 @@ async function extractGeneric<T>(
 }
 
 function getFallbackChain(provider: LLMProvider): Array<LLMProvider | 'openrouter-groq'> {
-    if (provider.startsWith('groq')) {
-        return [provider, 'gemini-3.0-flash', 'openrouter-groq'];
+    if (provider === 'groq-llama-4') {
+        return ['groq-llama-4', 'gemini-3.0-flash'];
     }
-
-    if (provider === 'gemini-3.0-flash') {
-        return ['gemini-3.0-flash', 'groq-llama-4', 'openrouter-groq'];
-    }
-
-    return [provider, 'groq-llama-4', 'openrouter-groq'];
+    return [provider];
 }
 
 // ========== INTERVENTIONS ==========
@@ -620,7 +630,8 @@ export async function generateFromPrompt(
     model: SmartNoteModel,
     patientId?: string,
     purpose: string = 'smart_note',
-    date?: string
+    date?: string,
+    requestId?: string
 ): Promise<SmartNoteGenerationResult> {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error('Missing GEMINI_API_KEY');
@@ -667,16 +678,18 @@ export async function generateFromPrompt(
     let outputTokens = 0;
 
     try {
-        const res = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
+        const res = await fetchWithRetryAndTimeout({
+            operation: 'CLINICAL_GENERATION',
+            url,
+            init: {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            },
+            requestId,
+            model: apiModel,
+            provider: 'gemini'
         });
-
-        if (!res.ok) {
-            const err = await res.text();
-            throw new Error(`Gemini API Error: ${res.status} ${err}`);
-        }
 
         const data = await res.json();
         const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
@@ -770,7 +783,8 @@ export async function extractTasks(
     transcript: string,
     patientName: string,
     provider: LLMProvider, // Changed from SmartNoteModel to LLMProvider
-    patientId?: string
+    patientId?: string,
+    requestId?: string
 ): Promise<TaskExtractionResult> {
     // Import prompt dynamically
     const { TASK_EXTRACTION_PROMPT } = await import('./prompts');
@@ -788,7 +802,8 @@ export async function extractTasks(
         provider,
         systemInstructions,
         patientId,
-        'task_extraction'
+        'task_extraction',
+        requestId
     );
 
     // Normalize result to TaskExtractionResult

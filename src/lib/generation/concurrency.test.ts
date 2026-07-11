@@ -95,7 +95,7 @@ test('Parallel Clinical Document Generation', async (t) => {
         };
 
         const originalFetch = globalThis.fetch;
-        globalThis.fetch = async (url: URL | string) => {
+        globalThis.fetch = (async (input: RequestInfo | URL) => {
             await new Promise(r => setTimeout(r, 50));
             return {
                 ok: true,
@@ -104,7 +104,7 @@ test('Parallel Clinical Document Generation', async (t) => {
                         {
                             content: {
                                 parts: [
-                                    { text: `Generated content from mock for ${url.toString()}` }
+                                    { text: `Generated content from mock for ${input.toString()}` }
                                 ]
                             }
                         }
@@ -115,7 +115,7 @@ test('Parallel Clinical Document Generation', async (t) => {
                     }
                 })
             } as unknown as Response;
-        };
+        }) as typeof fetch;
 
         try {
             const start = Date.now();

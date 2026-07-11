@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { isAuthenticated } from '@/lib/auth';
+import { fetchWithRetryAndTimeout } from '@/lib/llm-request';
 
 export const maxDuration = 60; // 60 seconds maximum (Vercel hobby plan max is 60s, pro is 300s)
 
@@ -42,37 +43,19 @@ export async function POST(request: Request) {
 
         console.log(`[Transcription] Sending ${sizeMB.toFixed(2)}MB file to Groq...`);
 
-        const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${apiKey}`
+        const response = await fetchWithRetryAndTimeout({
+            operation: 'TRANSCRIPTION',
+            url: 'https://api.groq.com/openai/v1/audio/transcriptions',
+            init: {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`
+                },
+                body: groqFormData
             },
-            body: groqFormData
+            provider: 'groq',
+            model: 'whisper-large-v3'
         });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('[Transcription] Groq Whisper API error:', {
-                status: response.status,
-                statusText: response.statusText,
-                body: errorText.substring(0, 500)
-            });
-
-            // Try to parse error message safely
-            let errorMessage = `Transcription failed (${response.status} ${response.statusText})`;
-            try {
-                const errorJson = JSON.parse(errorText);
-                if (errorJson.error?.message) {
-                    errorMessage = errorJson.error.message;
-                }
-            } catch {
-                if (errorText.length > 0 && errorText.length < 200) {
-                    errorMessage = errorText;
-                }
-            }
-
-            return NextResponse.json({ error: errorMessage }, { status: response.status });
-        }
 
         const data = await response.json();
 
@@ -85,7 +68,7 @@ export async function POST(request: Request) {
         console.error('[Transcription] API route critical error:', error);
         return NextResponse.json(
             { error: error.message || 'Internal error during transcription request' },
-            { status: 500 }
+            { status: error.httpStatus || 500 }
         );
     }
 }

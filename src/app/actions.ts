@@ -762,7 +762,8 @@ export async function generateClinicalDocuments(context: PreparedSmartNoteContex
                     context.model,
                     context.patientId,
                     'smart_note_consult',
-                    context.formattedDate
+                    context.formattedDate,
+                    context.requestId
                 );
 
                 const artifactId = await saveArtifact(context.encounterId, 'INTERNAL_NOTE', content);
@@ -824,7 +825,8 @@ export async function generateClinicalDocuments(context: PreparedSmartNoteContex
                     context.model,
                     context.patientId,
                     'smart_note_letter',
-                    context.formattedDate
+                    context.formattedDate,
+                    context.requestId
                 );
 
                 content = formatSubtitlesAndSignoff(content);
@@ -876,7 +878,8 @@ export async function extractAndSaveTasks(context: PreparedSmartNoteContext): Pr
             context.normalisedTranscript,
             context.patientName,
             'groq-llama-4',
-            context.patientId
+            context.patientId,
+            context.requestId
         );
 
         if (!taskResult.tasks || taskResult.tasks.length === 0) {
