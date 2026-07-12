@@ -474,7 +474,7 @@ export async function getPatientTasks(patientId: string) {
 }
 
 // ============ SMART NOTE CREATION ============
-import { generateFromPrompt, SmartNoteModel, extractTasks } from '@/lib/llm';
+import { generateFromPrompt, SmartNoteModel, SmartNoteGenerationResult, extractTasks } from '@/lib/llm';
 import { PROMPTS } from '@/lib/prompts';
 import { resolveLetterPrompt, DETAILED_LETTER_DIRECTIVE } from '@/lib/prompts/registry';
 import { postProcessLetter } from '@/lib/letter-post-processing';
@@ -616,6 +616,32 @@ function formatSubtitlesAndSignoff(text: string): string {
     text = text.replace(/(^|\r?\n)(\*\*(?!Dear\b)[^*\r\n]+?\*\*(?::|\s)\s*)([A-Za-z0-9].*)/gi, '$1$2\n$3');
 
     return postProcessLetter(text);
+}
+
+/**
+ * A draft must only be withheld when it is unusable or the provider says it
+ * is unsafe/incomplete. Formatting and heuristic validation findings are
+ * deliberately warnings: clinicians must still receive the generated draft.
+ */
+function getBlockingLetterGenerationError(
+    content: string,
+    generation: Pick<SmartNoteGenerationResult, 'blocked' | 'blockReason' | 'finishReason'>
+): string | null {
+    if (!content.trim()) return 'Model generated empty content.';
+    if (generation.blocked) {
+        return `Generation was blocked by the provider: ${generation.blockReason || 'Safety block'}`;
+    }
+    if (generation.finishReason && generation.finishReason !== 'STOP' && generation.finishReason !== 'UNKNOWN') {
+        return `Incomplete generation: provider reported finish reason as "${generation.finishReason}"`;
+    }
+    return null;
+}
+
+function mergeLetterValidationWarnings(validation: ReturnType<typeof validateGeneratedLetter>): string[] {
+    return [...new Set([
+        ...validation.warnings,
+        ...validation.fatalErrors.map(error => `Draft saved with validation warning: ${error}`)
+    ])];
 }
 
 /**
@@ -849,12 +875,13 @@ export async function generateClinicalDocuments(context: PreparedSmartNoteContex
                     expectedPronouns: context.outputs.pronouns
                 });
 
-                if (!validation.valid) {
+                const blockingError = getBlockingLetterGenerationError(content, genResult);
+                if (blockingError) {
                     result.letter = {
                         status: 'failed',
                         error: {
                             code: 'VALIDATION_FAILED',
-                            message: 'Validation failed:\n- ' + validation.fatalErrors.join('\n- ')
+                            message: blockingError
                         }
                     };
                 } else {
@@ -863,7 +890,7 @@ export async function generateClinicalDocuments(context: PreparedSmartNoteContex
                         status: 'success',
                         artifactId,
                         content,
-                        warnings: validation.warnings.length > 0 ? validation.warnings : undefined
+                        warnings: mergeLetterValidationWarnings(validation)
                     };
                 }
             } catch (e: any) {
@@ -1713,13 +1740,14 @@ export async function generateAdditionalDocument(
                 expectedPronouns: pronouns
             });
 
-            if (!validation.valid) {
+            const blockingError = getBlockingLetterGenerationError(content, genResult);
+            if (blockingError) {
                 return {
                     success: false,
-                    error: 'Validation failed:\n- ' + validation.fatalErrors.join('\n- ')
+                    error: blockingError
                 };
             }
-            warnings = validation.warnings;
+            warnings = mergeLetterValidationWarnings(validation);
         } else {
             if (genResult.blocked) {
                 return { success: false, error: `Generation was blocked by the provider: ${genResult.blockReason || 'Safety block'}` };
