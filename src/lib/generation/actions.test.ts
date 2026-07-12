@@ -231,7 +231,7 @@ test('Database Flow and Context Generation', async (t) => {
         assert.strictEqual(context.outputs.generateNote, true);
         assert.strictEqual(context.outputs.generateLetter, true);
         assert.strictEqual(context.model, 'gemini-2.5-flash');
-        assert.strictEqual(context.extractTasks, true);
+        assert.strictEqual(context.extractTasks, false);
 
         assert.strictEqual((context as unknown as { transcript?: string }).transcript, undefined);
 

@@ -94,6 +94,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
     const [model, setModel] = useState<SmartNoteModel>('gemini-3-flash-preview');
     const [isComplex, setIsComplex] = useState(false);
     const [pronouns, setPronouns] = useState<'auto' | 'he_him' | 'she_her' | 'they_them'>('auto');
+    const [extractTasksRequested, setExtractTasksRequested] = useState(false);
 
     // Generation status
     const [generationState, setGenerationState] = useState<GenerationState>({
@@ -284,6 +285,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         setModel('gemini-3-flash-preview');
         setIsComplex(false);
         setPronouns('auto');
+        setExtractTasksRequested(false);
         setGenerationState({ transcript: 'idle', note: 'idle', letter: 'idle', tasks: 'idle' });
         setRecordingDuration(0);
         setAudioSizeMB(0);
@@ -315,7 +317,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
             transcript: 'generating',
             note: generateNote ? 'generating' : 'idle',
             letter: generateLetter ? 'generating' : 'idle',
-            tasks: 'generating'
+            tasks: extractTasksRequested ? 'generating' : 'idle'
         });
 
         setIsPreparing(true);
@@ -337,6 +339,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                         isComplex: generateLetter ? isComplex : undefined,
                         pronouns: generateLetter ? pronouns : undefined
                     },
+                    extractTasks: extractTasksRequested,
                     model
                 };
 
@@ -349,7 +352,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                     }));
                     setIsPreparing(false);
                     setIsGeneratingClinical(true);
-                    setIsExtractingTasks(true);
+                    setIsExtractingTasks(extractTasksRequested);
                 }
             } catch (e: any) {
                 console.error('Preparation failed:', e);
@@ -366,37 +369,36 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                 return;
             }
 
-            // Start clinical generation and task extraction concurrently
+            // Task extraction is an optional, separate LLM request.
             const clinicalPromise = generateClinicalDocuments(context);
-            const tasksPromise = extractAndSaveTasks(context);
-
-            // Handle tasks promise asynchronously/non-blocking
-            tasksPromise
-                .then((result) => {
-                    if (isMountedRef.current && open) {
-                        setGenerationState(prev => ({
-                            ...prev,
-                            tasks: result.status === 'success' ? 'success' : 'error'
-                        }));
-                        setIsExtractingTasks(false);
-                    }
-                    if (result.status === 'success') {
-                        toast.success(`Extracted and saved ${result.insertedCount} tasks successfully`);
-                    } else if (result.status === 'failed' && result.error) {
-                        toast.error(`Task extraction warning: ${result.error.message}`);
-                    }
-                })
-                .catch((err) => {
-                    console.error('Task promise error:', err);
-                    if (isMountedRef.current && open) {
-                        setGenerationState(prev => ({
-                            ...prev,
-                            tasks: 'error'
-                        }));
-                        setIsExtractingTasks(false);
-                    }
-                    toast.error(`Task extraction failed: ${err.message || 'Unknown error'}`);
-                });
+            if (extractTasksRequested) {
+                extractAndSaveTasks(context)
+                    .then((result) => {
+                        if (isMountedRef.current && open) {
+                            setGenerationState(prev => ({
+                                ...prev,
+                                tasks: result.status === 'success' ? 'success' : 'error'
+                            }));
+                            setIsExtractingTasks(false);
+                        }
+                        if (result.status === 'success') {
+                            toast.success(`Extracted and saved ${result.insertedCount} tasks successfully`);
+                        } else if (result.status === 'failed' && result.error) {
+                            toast.error(`Task extraction warning: ${result.error.message}`);
+                        }
+                    })
+                    .catch((err) => {
+                        console.error('Task promise error:', err);
+                        if (isMountedRef.current && open) {
+                            setGenerationState(prev => ({
+                                ...prev,
+                                tasks: 'error'
+                            }));
+                            setIsExtractingTasks(false);
+                        }
+                        toast.error(`Task extraction failed: ${err.message || 'Unknown error'}`);
+                    });
+            }
 
             // Await only the clinical document promise
             try {
@@ -444,7 +446,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                     toast.success(`Created ${successArtifacts.join(' and ')} successfully`);
                     
                     // Do not block dialog close or router refresh for validation warnings
-                    // or the separately-running tasks promise.
+                    // or the separately-running optional task request.
                     setTimeout(() => {
                         if (isMountedRef.current) {
                             setOpen(false);
@@ -938,6 +940,14 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                     <>
                         <Button variant="outline" onClick={() => setOpen(false)} disabled={isPreparing || isGeneratingClinical}>
                             Cancel
+                        </Button>
+                        <Button
+                            type="button"
+                            variant={extractTasksRequested ? 'secondary' : 'outline'}
+                            onClick={() => setExtractTasksRequested((requested) => !requested)}
+                            disabled={isPreparing || isGeneratingClinical}
+                        >
+                            {extractTasksRequested ? 'Task extraction included' : 'Include task extraction'}
                         </Button>
                         <Button onClick={handleGenerate} disabled={isPreparing || isGeneratingClinical || !transcript.trim()}>
                             {(isPreparing || isGeneratingClinical) && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}

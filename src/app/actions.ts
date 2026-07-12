@@ -497,6 +497,8 @@ export interface SmartNoteOptions {
         isComplex?: boolean;
         pronouns?: 'auto' | 'he_him' | 'she_her' | 'they_them';
     };
+    /** Task extraction is opt-in because it makes a separate LLM request. */
+    extractTasks?: boolean;
     model: SmartNoteModel;
 }
 
@@ -733,8 +735,9 @@ export async function prepareSmartNoteGeneration(options: SmartNoteOptions): Pro
     const transcriptHash = hashTranscript(normalised);
     const requestId = crypto.randomUUID();
 
-    // Default extractTasks is true for backward compatibility
-    const extractTasksFlag = true;
+    // Task extraction is opt-in: it is a separate LLM request and is not part
+    // of routine letter generation.
+    const extractTasksFlag = options.extractTasks === true;
 
     return {
         requestId,
