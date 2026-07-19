@@ -25,6 +25,9 @@ let originalFrom: unknown;
 
 async function ensureSupabaseMock() {
     if (!supabaseClient) {
+        process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'test-gemini-key';
+        process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'test-openai-key';
+        process.env.GROQ_API_KEY = process.env.GROQ_API_KEY || 'test-groq-key';
         process.env.NEXT_PUBLIC_SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supabase.co';
         process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'dummy-service-role-key';
         const mod = await import('../supabase');
@@ -97,6 +100,16 @@ test('Parallel Clinical Document Generation', async (t) => {
         const originalFetch = globalThis.fetch;
         globalThis.fetch = (async (input: RequestInfo | URL) => {
             await new Promise(r => setTimeout(r, 50));
+            if (String(input).includes('api.openai.com')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        output_text: `# Summary\nThe patient had a follow-up consultation today.\n\n# Impression and Plan\nWe will continue monitoring.\n\nKind regards,\nDr. Smith`,
+                        status: 'completed',
+                        usage: { input_tokens: 10, output_tokens: 20 }
+                    })
+                } as unknown as Response;
+            }
             return {
                 ok: true,
                 json: async () => ({

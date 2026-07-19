@@ -25,7 +25,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { Sparkles, Mic, Square, Loader2, Check, AlertCircle, FileText, Mail } from 'lucide-react';
 import { prepareSmartNoteGeneration, generateClinicalDocuments, extractAndSaveTasks, SmartNoteOptions } from '@/app/actions';
-import { SmartNoteModel } from '@/lib/llm';
+import { CONSULT_NOTE_MODEL } from '@/lib/llm';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 
@@ -91,7 +91,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
     const generateLetter = true;
     const [letterType, setLetterType] = useState<LetterType>('review');
     const [templateType, setTemplateType] = useState<TemplateType>('general');
-    const [model, setModel] = useState<SmartNoteModel>('gemini-3-flash-preview');
+    const model = CONSULT_NOTE_MODEL;
     const [isComplex, setIsComplex] = useState(false);
     const [pronouns, setPronouns] = useState<'auto' | 'he_him' | 'she_her' | 'they_them'>('auto');
     const [extractTasksRequested, setExtractTasksRequested] = useState(false);
@@ -282,7 +282,6 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         setEncounterDate(new Date().toISOString().split('T')[0]);
         setLetterType('review');
         setTemplateType('general');
-        setModel('gemini-3-flash-preview');
         setIsComplex(false);
         setPronouns('auto');
         setExtractTasksRequested(false);
@@ -725,17 +724,10 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
 
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                             <div className="space-y-2">
-                                <Label>Model</Label>
-                                <Select value={model} onValueChange={(v) => setModel(v as SmartNoteModel)}>
-                                    <SelectTrigger>
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="gemini-3-flash-preview">Gemini 3 Flash (Preview)</SelectItem>
-                                        <SelectItem value="gemini-2.5-flash">Gemini 2.5 Flash</SelectItem>
-                                        <SelectItem value="gemini-3.1-flash-lite-preview">Gemini 3.1 Flash-Lite</SelectItem>
-                                    </SelectContent>
-                                </Select>
+                                <Label>AI models</Label>
+                                <div className="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                                    Notes: Gemini 3.1 Flash-Lite<br />Letters: GPT-5.6 Luna
+                                </div>
                             </div>
 
                             <div className="space-y-2">

@@ -474,7 +474,7 @@ export async function getPatientTasks(patientId: string) {
 }
 
 // ============ SMART NOTE CREATION ============
-import { generateFromPrompt, SmartNoteModel, SmartNoteGenerationResult, extractTasks } from '@/lib/llm';
+import { generateFromPrompt, SmartNoteModel, SmartNoteGenerationResult, extractTasks, CONSULT_NOTE_MODEL, CONSULT_LETTER_MODEL } from '@/lib/llm';
 import { PROMPTS } from '@/lib/prompts';
 import { resolveLetterPrompt, DETAILED_LETTER_DIRECTIVE } from '@/lib/prompts/registry';
 import { postProcessLetter } from '@/lib/letter-post-processing';
@@ -660,7 +660,7 @@ export async function prepareSmartNoteGeneration(options: SmartNoteOptions): Pro
         throw new GenerationException('INVALID_INPUT', `Invalid noteType: ${options.noteType}`);
     }
 
-    const allowedModels = ['gemini-2.5-flash', 'gemini-3-flash-preview', 'gemini-3.0-flash', 'gemini-3.1-flash-lite-preview'];
+    const allowedModels = ['gemini-2.5-flash', 'gemini-3-flash-preview', 'gemini-3.0-flash', 'gemini-3.1-flash-lite-preview', 'gemini-3.1-flash-lite'];
     if (!allowedModels.includes(options.model)) {
         throw new GenerationException('INVALID_INPUT', `Invalid model: ${options.model}`);
     }
@@ -793,7 +793,7 @@ export async function generateClinicalDocuments(context: PreparedSmartNoteContex
                         documentType: 'smart_note',
                         templateType: context.noteType
                     },
-                    model: context.model,
+                    model: CONSULT_NOTE_MODEL,
                     purpose: 'smart_note_consult',
                     patientId: context.patientId,
                     requestId: context.requestId
@@ -850,7 +850,7 @@ export async function generateClinicalDocuments(context: PreparedSmartNoteContex
                     .replaceAll('{{PATIENT_NAME}}', context.patientName)
                     .replaceAll('{{DATE}}', context.formattedDate || '');
 
-                let genResult = await generateFromPrompt({
+                const genResult = await generateFromPrompt({
                     systemInstructions,
                     transcript: context.normalisedTranscript,
                     metadata: {
@@ -860,13 +860,13 @@ export async function generateClinicalDocuments(context: PreparedSmartNoteContex
                         templateType: template,
                         pronouns: context.outputs.pronouns
                     },
-                    model: context.model,
+                    model: CONSULT_LETTER_MODEL,
                     purpose: 'smart_note_letter',
                     patientId: context.patientId,
                     requestId: context.requestId
                 });
 
-                let content = formatSubtitlesAndSignoff(genResult.content);
+                const content = formatSubtitlesAndSignoff(genResult.content);
 
                 const validation = validateGeneratedLetter({
                     text: content,
@@ -1024,7 +1024,7 @@ export async function createSmartNote(options: SmartNoteOptions): Promise<SmartN
                         documentType: 'smart_note',
                         templateType: context.noteType
                     },
-                    model: context.model,
+                    model: CONSULT_NOTE_MODEL,
                     purpose: 'smart_note_consult',
                     patientId: context.patientId
                 });
@@ -1063,7 +1063,7 @@ export async function createSmartNote(options: SmartNoteOptions): Promise<SmartN
                         templateType: template,
                         pronouns: context.outputs.pronouns
                     },
-                    model: context.model,
+                    model: CONSULT_LETTER_MODEL,
                     purpose: 'smart_note_letter',
                     patientId: context.patientId
                 });
