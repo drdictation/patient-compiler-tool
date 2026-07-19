@@ -474,7 +474,8 @@ export async function getPatientTasks(patientId: string) {
 }
 
 // ============ SMART NOTE CREATION ============
-import { generateFromPrompt, SmartNoteModel, SmartNoteGenerationResult, extractTasks, CONSULT_NOTE_MODEL, CONSULT_LETTER_MODEL } from '@/lib/llm';
+import { generateFromPrompt, SmartNoteGenerationResult, extractTasks } from '@/lib/llm';
+import { SmartNoteModel, CONSULT_NOTE_MODEL, CONSULT_LETTER_MODEL } from '@/lib/model-config';
 import { PROMPTS } from '@/lib/prompts';
 import { resolveLetterPrompt, DETAILED_LETTER_DIRECTIVE } from '@/lib/prompts/registry';
 import { postProcessLetter } from '@/lib/letter-post-processing';

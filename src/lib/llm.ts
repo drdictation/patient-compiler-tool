@@ -2,6 +2,10 @@
 import { supabase } from './supabase';
 import { fetchWithRetryAndTimeout, classifyError, BoundedRequestException } from './llm-request';
 import { GenerationRequest } from './prompts/types';
+import { CONSULT_LETTER_MODEL, SmartNoteModel } from './model-config';
+
+export type { SmartNoteModel } from './model-config';
+export { CONSULT_NOTE_MODEL, CONSULT_LETTER_MODEL } from './model-config';
 
 export type LLMProvider = 'gemini-flash' | 'gemini-flash-lite' | 'gemini-3.0-flash' | 'groq-llama-3' | 'groq-gpt-oss' | 'groq-llama-4';
 
@@ -605,14 +609,6 @@ export async function extractInterventions(opts: ExtractionOptions): Promise<Int
 
 
 // ========== SMART NOTE GENERATION ==========
-
-/**
- * Models available for clinical document generation.
- */
-export type SmartNoteModel = 'gemini-2.5-flash' | 'gemini-3-flash-preview' | 'gemini-3.0-flash' | 'gemini-3.1-flash-lite-preview' | 'gemini-3.1-flash-lite' | 'gpt-5.6-luna';
-
-export const CONSULT_NOTE_MODEL: SmartNoteModel = 'gemini-3.1-flash-lite';
-export const CONSULT_LETTER_MODEL: SmartNoteModel = 'gpt-5.6-luna';
 
 export interface SmartNoteGenerationResult {
     content: string;

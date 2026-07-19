@@ -1,4 +1,4 @@
-import { SmartNoteModel } from '../llm';
+import { SmartNoteModel } from '../model-config';
 
 export interface GenerationRequest {
     systemInstructions: string;

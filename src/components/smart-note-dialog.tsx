@@ -25,7 +25,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { Sparkles, Mic, Square, Loader2, Check, AlertCircle, FileText, Mail } from 'lucide-react';
 import { prepareSmartNoteGeneration, generateClinicalDocuments, extractAndSaveTasks, SmartNoteOptions } from '@/app/actions';
-import { CONSULT_NOTE_MODEL } from '@/lib/llm';
+import { CONSULT_NOTE_MODEL } from '@/lib/model-config';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 
