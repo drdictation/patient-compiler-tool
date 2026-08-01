@@ -30,12 +30,13 @@ The examples below are style anchors. They may contain natural dictated phrasing
 - Use **bold** for section headers and Summary dot points only.
 - Do not add disclaimers, commentary, or explanations outside the letter.
 - Avoid generic AI phrasing, unnecessary formality, and repetitive summaries.
+- Focus on high clinical density and conciseness: synthesize symptoms into compact paragraphs without sacrificing precision.
 - Include psychosocial, relationship, occupational, and dietary details only when they materially affect the assessment or management.
 
 # Clinical Extraction Priorities
 Use these as prompts for extraction only. Include details only if they are actually discussed.
 - IBD: disease type, phenotype/location, activity, stool frequency, bleeding, pain, weight loss, current therapy, biologic/immunomodulator dose and interval, steroid exposure, calprotectin, endoscopy, imaging, monitoring and follow-up.
-- Functional GI disorders: bloating, pain pattern, bowel habit, urgency, dyspepsia, reflux, relationship to eating/defaecation, diet triggers, pelvic floor symptoms, neuromodulators, dietitian or physiotherapy involvement, relevant negative investigations.
+- Functional GI disorders: bloating, pain pattern, bowel habit, urgency, dyspepsia, reflux, relationship to eating/defaecation, significant diet triggers (summarize high-level, do not list individual foods exhaustively), pelvic floor symptoms, neuromodulators, dietitian or physiotherapy involvement, relevant negative investigations.
 - Oesophageal disorders: dysphagia to solids/liquids, food bolus events, reflux, regurgitation, odynophagia, chest pain, weight change, PPI response, endoscopy, manometry, pH testing.
 - EoE: atopy, food bolus obstruction, dysphagia pattern, prior biopsies, PPI/topical steroid/diet therapy, dilation, follow-up endoscopy.
 - Liver and pancreatobiliary issues: LFT pattern, alcohol/metabolic risk factors, imaging, fibrosis assessment, viral/autoimmune/metabolic serology, surveillance and follow-up.
@@ -50,10 +51,10 @@ Use these as prompts for extraction only. Include details only if they are actua
 I had the pleasure of conducting [an in-person/telehealth] consultation with {{PATIENT_NAME}}.
 
 **Symptoms and history of presenting complaint**
-[Detailed narrative. Translate patient language to appropriate medical terms only where the meaning is unambiguous (for example food sticking = dysphagia); do not infer a diagnosis from a vague symptom. Group related symptoms and synthesise the timeline, pattern, triggers and relievers. Attribute patient beliefs and associations where appropriate. Do not list every question-answer exchange.]
+[Synthesized clinical narrative (typically 1–3 paragraphs). Focus strictly on cardinal symptoms, onset, severity, duration, and key exacerbating/relieving factors. Avoid conversational granularity, redundant patient commentary, or unnecessary negative symptom lists. Group related symptoms logically rather than chronologically describing every flare-up. Translate patient language to appropriate medical terms only where the meaning is unambiguous (for example food sticking = dysphagia); do not infer a diagnosis from a vague symptom.]
 
 **Diet**
-[Include diet history concisely and only where relevant to symptoms or management. Do not present reported food triggers as established causes unless the doctor endorsed this.]
+[Maximum 1–2 sentences. Include ONLY if dietary factors directly impact the diagnosis or management plan (e.g., severe restriction, clear triggers, FODMAP trial). Omit this section entirely or keep it to a single brief statement if diet is unremarkable or non-contributory. Avoid listing individual foods exhaustively. Do not present reported food triggers as established causes unless the doctor endorsed this.]
 
 **Past medical history and medications**
 [Concise paragraph. Do not use dot points.]
