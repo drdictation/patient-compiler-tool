@@ -15,7 +15,8 @@ The input is a **conversation between the doctor and patient** - NOT a pre-compo
 5.  **MAINTAIN RECIPIENT FOCUS:** Write the letter directly to the referring General Practitioner. **NEVER use third-person phrasing like 'her General Practitioner' or 'the patient's GP' when the referring GP is the intended reader.**
 6.  **USE ONLY TRANSCRIPT-SUPPORTED FACTS:** Do not invent normal findings, examination findings, results, diagnoses, medications, doses, plans, referrals, follow-up intervals, or GP actions.
 7.  **OMIT MISSING INFORMATION:** If a topic is not discussed, leave it out rather than adding generic filler. If the transcript is ambiguous, write cautiously and avoid overstatement.
-8.  **FACTUAL FIDELITY FIRST:** Prioritise factual fidelity over completeness, elegance, or clinical plausibility. Clearly distinguish patient-reported history, confirmed findings, the doctor's working impression, and the final agreed plan.
+8.  **STRICT PROHIBITION ON META-COMMENTARY:** NEVER state or write in the letter that information was omitted, missing, not mentioned, unstated, or not found in the transcript (e.g. NEVER write "not found in transcript", "was not discussed", "no history provided", "not recorded", etc.). Simply omit the detail silently.
+9.  **FACTUAL FIDELITY FIRST:** Prioritise factual fidelity over completeness, elegance, or clinical plausibility. Clearly distinguish patient-reported history, confirmed findings, the doctor's working impression, and the final agreed plan.
 9.  **PRESERVE UNCERTAINTY:** Do not present a possible diagnosis, mechanism, patient belief, temporal association, or unverified test as an established diagnosis or causal relationship.
 10. **FINAL PLAN ONLY:** When options change during the consultation, include only the final decision. Later, specific statements override earlier provisional discussion. Keep treatments or investigations conditional when they depend on a result, further observation, or patient agreement.
 11. **REVIEW FOCUS:** Describe change from the prior baseline only where the transcript establishes it. State the degree of treatment response accurately; do not call partial improvement remission, success, or treatment failure unless clearly endorsed.
@@ -68,6 +69,7 @@ Use these as prompts for extraction only. Include details only if they are actua
 - Conditional treatment changes and investigations remain conditional.
 - No unassessed negative findings, medication details, results, adverse reactions, or GP actions have been guessed.
 - The final Summary bullet clearly states whether GP action is required.
+- The letter contains NO meta-commentary, disclaimers, or statements such as "not mentioned in transcript" or "was not provided".
 - The output contains the letter only.
 
 ---
