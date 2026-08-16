@@ -36,7 +36,7 @@ interface SmartNoteDialogProps {
     patientName: string;
     asMobileButton?: boolean;
     mode?: 'standard' | 'quick-record';
-    priorNotes?: Array<{ id: string; encounterDate: string; content: string }>;
+    priorNotes?: Array<{ id: string; encounterDate: string; label: string; content: string }>;
 }
 
 type InputMode = 'paste' | 'record';
@@ -619,7 +619,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
             <DialogTrigger asChild>
                 {triggerButton}
             </DialogTrigger>
-            <DialogContent className={priorNotes.length > 0 ? "sm:max-w-[95vw] xl:max-w-[1400px] h-[90vh] flex flex-col" : "sm:max-w-[700px] max-h-[90vh] flex flex-col"}>
+            <DialogContent className="sm:max-w-[95vw] xl:max-w-[1400px] h-[90vh] flex flex-col">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2 justify-between">
                         <div className="flex items-center gap-2">
@@ -932,28 +932,37 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                         )}
                 </div>
 
-                {priorNotes.length > 0 && (
-                    <aside className="hidden lg:flex min-h-0 flex-col rounded-lg border bg-slate-50/70 overflow-hidden">
+                    <aside className="hidden lg:flex min-h-0 flex-col rounded-lg border border-slate-200 bg-slate-50/70 overflow-hidden">
                         <div className="border-b bg-white px-4 py-3">
                             <h3 className="font-semibold text-slate-800">Previous consult notes</h3>
                             <p className="text-xs text-slate-500">Scroll here while recording. This does not interrupt the microphone.</p>
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                            {priorNotes.map(note => (
-                                <article key={note.id} className="rounded-lg border bg-white p-4 shadow-sm">
-                                    <div className="mb-3 text-xs font-semibold text-indigo-700">
-                                        {new Date(`${note.encounterDate}T00:00:00`).toLocaleDateString('en-AU', {
-                                            timeZone: 'Australia/Melbourne', day: 'numeric', month: 'short', year: 'numeric'
-                                        })}
+                            {priorNotes.length === 0 ? (
+                                <div className="h-full min-h-48 flex items-center justify-center rounded-lg border-2 border-dashed border-slate-200 bg-white px-6 text-center">
+                                    <div>
+                                        <FileText className="mx-auto mb-2 h-7 w-7 text-slate-300" />
+                                        <p className="text-sm font-medium text-slate-600">No previous consult notes found</p>
+                                        <p className="mt-1 text-xs text-slate-400">Notes will appear here once this patient has a saved consult.</p>
                                     </div>
-                                    <div className="prose prose-sm max-w-none text-slate-700">
-                                        <ReactMarkdown>{note.content}</ReactMarkdown>
-                                    </div>
-                                </article>
-                            ))}
+                                </div>
+                            ) : priorNotes.map(note => (
+                                    <article key={note.id} className="rounded-lg border bg-white p-4 shadow-sm">
+                                        <div className="mb-3 flex items-center justify-between gap-3">
+                                            <span className="text-xs font-semibold text-indigo-700">
+                                                {new Date(`${note.encounterDate}T00:00:00`).toLocaleDateString('en-AU', {
+                                                    timeZone: 'Australia/Melbourne', day: 'numeric', month: 'short', year: 'numeric'
+                                                })}
+                                            </span>
+                                            <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">{note.label}</span>
+                                        </div>
+                                        <div className="prose prose-sm max-w-none text-slate-700">
+                                            <ReactMarkdown>{note.content}</ReactMarkdown>
+                                        </div>
+                                    </article>
+                                ))}
                         </div>
                     </aside>
-                )}
                 </div>
 
                 <DialogFooter className="mt-4">

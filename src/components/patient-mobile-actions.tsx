@@ -14,7 +14,7 @@ interface PatientMobileActionsProps {
     patientId: string;
     patientName: string;
     patient: PatientDetails;
-    priorNotes?: Array<{ id: string; encounterDate: string; content: string }>;
+    priorNotes?: Array<{ id: string; encounterDate: string; label: string; content: string }>;
 }
 
 export function PatientMobileActions({ patientId, patientName, patient, priorNotes = [] }: PatientMobileActionsProps) {
