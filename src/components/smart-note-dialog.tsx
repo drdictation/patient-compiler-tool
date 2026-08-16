@@ -28,12 +28,15 @@ import { prepareSmartNoteGeneration, generateClinicalDocuments, extractAndSaveTa
 import { CONSULT_NOTE_MODEL } from '@/lib/model-config';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
+import { getMelbourneDate } from '@/lib/date-time';
+import ReactMarkdown from 'react-markdown';
 
 interface SmartNoteDialogProps {
     patientId: string;
     patientName: string;
     asMobileButton?: boolean;
     mode?: 'standard' | 'quick-record';
+    priorNotes?: Array<{ id: string; encounterDate: string; content: string }>;
 }
 
 type InputMode = 'paste' | 'record';
@@ -49,7 +52,7 @@ interface GenerationState {
     tasks: GenerationStatus;
 }
 
-export function SmartNoteDialog({ patientId, patientName, asMobileButton = false, mode = 'standard' }: SmartNoteDialogProps) {
+export function SmartNoteDialog({ patientId, patientName, asMobileButton = false, mode = 'standard', priorNotes = [] }: SmartNoteDialogProps) {
     const MAX_CHUNK_MB = 4.5;
     const MAX_TOTAL_MB = 25;
 
@@ -86,7 +89,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
 
     // Generation options
     const [noteType, setNoteType] = useState<NoteType>('review_consult');
-    const [encounterDate, setEncounterDate] = useState(new Date().toISOString().split('T')[0]);
+    const [encounterDate, setEncounterDate] = useState(getMelbourneDate);
     const generateNote = true;
     const generateLetter = true;
     const [letterType, setLetterType] = useState<LetterType>('review');
@@ -279,7 +282,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
 
         setTranscript('');
         setNoteType('review_consult');
-        setEncounterDate(new Date().toISOString().split('T')[0]);
+        setEncounterDate(getMelbourneDate());
         setLetterType('review');
         setTemplateType('general');
         setIsComplex(false);
@@ -616,7 +619,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
             <DialogTrigger asChild>
                 {triggerButton}
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[700px] max-h-[90vh] flex flex-col">
+            <DialogContent className={priorNotes.length > 0 ? "sm:max-w-[95vw] xl:max-w-[1400px] h-[90vh] flex flex-col" : "sm:max-w-[700px] max-h-[90vh] flex flex-col"}>
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2 justify-between">
                         <div className="flex items-center gap-2">
@@ -649,7 +652,8 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="flex-1 overflow-y-auto px-1 py-2 space-y-6">
+                <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)] gap-5">
+                <div className="overflow-y-auto px-1 py-2 space-y-6">
                     {/* Mode Toggle */}
                     <div className="flex gap-2">
                         <Button
@@ -926,6 +930,30 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                                 <StatusIndicator status={generationState.tasks} label="Extracting tasks" />
                             </div>
                         )}
+                </div>
+
+                {priorNotes.length > 0 && (
+                    <aside className="hidden lg:flex min-h-0 flex-col rounded-lg border bg-slate-50/70 overflow-hidden">
+                        <div className="border-b bg-white px-4 py-3">
+                            <h3 className="font-semibold text-slate-800">Previous consult notes</h3>
+                            <p className="text-xs text-slate-500">Scroll here while recording. This does not interrupt the microphone.</p>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                            {priorNotes.map(note => (
+                                <article key={note.id} className="rounded-lg border bg-white p-4 shadow-sm">
+                                    <div className="mb-3 text-xs font-semibold text-indigo-700">
+                                        {new Date(`${note.encounterDate}T00:00:00`).toLocaleDateString('en-AU', {
+                                            timeZone: 'Australia/Melbourne', day: 'numeric', month: 'short', year: 'numeric'
+                                        })}
+                                    </div>
+                                    <div className="prose prose-sm max-w-none text-slate-700">
+                                        <ReactMarkdown>{note.content}</ReactMarkdown>
+                                    </div>
+                                </article>
+                            ))}
+                        </div>
+                    </aside>
+                )}
                 </div>
 
                 <DialogFooter className="mt-4">

@@ -2,6 +2,7 @@
 
 import { supabase } from '@/lib/supabase';
 import { revalidatePath } from 'next/cache';
+import { getMelbourneDate } from '@/lib/date-time';
 import { PatientDetails, getPatientDetails } from '@/lib/data';
 
 // ============ CREATE PATIENT ============
@@ -1311,7 +1312,7 @@ export async function assignInboxItem(
             .single();
 
         const patientName = patient?.display_name || 'Unknown';
-        const date = options?.date || new Date().toISOString().split('T')[0];
+        const date = options?.date || getMelbourneDate();
 
         let artifactId: string | undefined;
 

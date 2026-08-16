@@ -174,7 +174,7 @@ export function ArtifactSection({ encounterId, type, initialArtifact, readOnly =
                         <p className="text-xs font-semibold text-muted-foreground mt-2">Version History</p>
                         {initialArtifact.versions.sort((a, b) => b.version_number - a.version_number).map(v => (
                             <div key={v.version_number} className="text-xs text-muted-foreground w-full flex justify-between">
-                                <span>v{v.version_number} - {new Date(v.created_at).toLocaleString()}</span>
+                                <span>v{v.version_number} - {new Date(v.created_at).toLocaleString('en-AU', { timeZone: 'Australia/Melbourne' })} Melbourne time</span>
                             </div>
                         ))}
                     </CardFooter>

@@ -14,9 +14,10 @@ interface PatientMobileActionsProps {
     patientId: string;
     patientName: string;
     patient: PatientDetails;
+    priorNotes?: Array<{ id: string; encounterDate: string; content: string }>;
 }
 
-export function PatientMobileActions({ patientId, patientName, patient }: PatientMobileActionsProps) {
+export function PatientMobileActions({ patientId, patientName, patient, priorNotes = [] }: PatientMobileActionsProps) {
     return (
         <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-white border-t shadow-lg safe-area-inset-bottom">
             <div className="flex items-center justify-around px-2 py-2">
@@ -24,10 +25,10 @@ export function PatientMobileActions({ patientId, patientName, patient }: Patien
                 <AddNoteDialog patientId={patientId} asMobileButton />
 
                 {/* Quick Record - inline dialog */}
-                <SmartNoteDialog patientId={patientId} patientName={patientName} asMobileButton mode="quick-record" />
+                <SmartNoteDialog patientId={patientId} patientName={patientName} asMobileButton mode="quick-record" priorNotes={priorNotes} />
 
                 {/* Smart Note - inline dialog */}
-                <SmartNoteDialog patientId={patientId} patientName={patientName} asMobileButton mode="standard" />
+                <SmartNoteDialog patientId={patientId} patientName={patientName} asMobileButton mode="standard" priorNotes={priorNotes} />
 
                 {/* Global Scan */}
                 <GlobalScanButton patientId={patientId} asMobileButton />

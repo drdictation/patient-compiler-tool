@@ -26,6 +26,7 @@ import { createManualNote } from '@/app/actions';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { createWorker } from 'tesseract.js';
+import { getMelbourneDate } from '@/lib/date-time';
 
 interface AddNoteDialogProps {
     patientId: string;
@@ -35,7 +36,7 @@ interface AddNoteDialogProps {
 export function AddNoteDialog({ patientId, asMobileButton = false }: AddNoteDialogProps) {
     const [open, setOpen] = useState(false);
     const [noteType, setNoteType] = useState<'INTERNAL_NOTE' | 'REFERRER_LETTER'>('INTERNAL_NOTE');
-    const [date, setDate] = useState(new Date().toISOString().split('T')[0]); // Today's date
+    const [date, setDate] = useState(getMelbourneDate);
     const [content, setContent] = useState('');
     const [isPending, startTransition] = useTransition();
     const router = useRouter();
@@ -117,7 +118,7 @@ export function AddNoteDialog({ patientId, asMobileButton = false }: AddNoteDial
                 setOpen(false);
                 setContent('');
                 setNoteType('INTERNAL_NOTE');
-                setDate(new Date().toISOString().split('T')[0]);
+                setDate(getMelbourneDate());
                 router.refresh();
             } catch (e: any) {
                 toast.error(`Failed: ${e.message}`);

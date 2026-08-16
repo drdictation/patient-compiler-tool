@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { Search, ScrollText, Mic, Copy, Check, Calendar, AlertCircle } from 'lucide-react';
+import { Search, ScrollText, Mic, Copy, Check, Calendar, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface SourceRecord {
@@ -44,6 +44,16 @@ interface TranscriptsPanelProps {
 export function TranscriptsPanel({ patientName, timeline }: TranscriptsPanelProps) {
     const [searchQuery, setSearchQuery] = useState('');
     const [copiedId, setCopiedId] = useState<string | null>(null);
+    const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
+
+    const toggleExpanded = (id: string) => {
+        setExpandedIds(current => {
+            const next = new Set(current);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    };
 
     // Filter encounters that have transcripts or dictations
     const encountersWithTranscripts = timeline.filter(encounter => {
@@ -136,6 +146,7 @@ export function TranscriptsPanel({ patientName, timeline }: TranscriptsPanelProp
                                 const transcriptArt = encounter.artifacts.find(a => a.artifact_type === 'RAW_TRANSCRIPT');
                                 const latestVersion = transcriptArt?.versions.find(v => v.version_number === transcriptArt.current_version) || transcriptArt?.versions[0];
                                 const transcriptContent = latestVersion?.content || '';
+                                const isExpanded = expandedIds.has(encounter.id);
 
                                 return (
                                     <div key={encounter.id} className="border border-slate-200 rounded-lg overflow-hidden bg-white hover:shadow-sm transition-shadow">
@@ -155,9 +166,13 @@ export function TranscriptsPanel({ patientName, timeline }: TranscriptsPanelProp
                                                         <Mic className="h-3 w-3 mr-1" /> {encounter.source_records.length} Dictation(s)
                                                     </Badge>
                                                 )}
+                                                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => toggleExpanded(encounter.id)}>
+                                                    {isExpanded ? <ChevronUp className="h-3.5 w-3.5 mr-1" /> : <ChevronDown className="h-3.5 w-3.5 mr-1" />}
+                                                    {isExpanded ? 'Hide transcripts' : 'Show transcripts'}
+                                                </Button>
                                             </div>
                                         </div>
-                                        <div className="p-4 space-y-4">
+                                        {isExpanded && <div className="p-4 space-y-4">
                                             {/* Smart Note Transcript */}
                                             {transcriptContent && (
                                                 <div className="space-y-1.5">
@@ -228,7 +243,7 @@ export function TranscriptsPanel({ patientName, timeline }: TranscriptsPanelProp
                                                     </div>
                                                 </div>
                                             )}
-                                        </div>
+                                        </div>}
                                     </div>
                                 );
                             })}

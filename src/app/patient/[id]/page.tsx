@@ -40,6 +40,12 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
         notFound();
     }
 
+    const priorNotes = timeline.flatMap(encounter => {
+        const artifact = encounter.artifacts.find(item => item.artifact_type === 'INTERNAL_NOTE');
+        const version = artifact?.versions.find(item => item.version_number === artifact.current_version) || artifact?.versions[0];
+        return version?.content ? [{ id: `${encounter.id}-${version.version_number}`, encounterDate: encounter.encounter_date, content: version.content }] : [];
+    });
+
     // Calculate counts for sidebar
     const activeIssuesCount = issues.filter(i =>
         (i.lifecycle_state === 'accepted' || i.lifecycle_state === 'clinician_entered') &&
@@ -81,8 +87,8 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                 {/* Action buttons — left-aligned, visible on sm+ */}
                 <div className="hidden sm:flex items-center gap-2">
                     <AddNoteDialog patientId={patient.id} />
-                    <SmartNoteDialog patientId={patient.id} patientName={patient.display_name} mode="quick-record" />
-                    <SmartNoteDialog patientId={patient.id} patientName={patient.display_name} mode="standard" />
+                    <SmartNoteDialog patientId={patient.id} patientName={patient.display_name} mode="quick-record" priorNotes={priorNotes} />
+                    <SmartNoteDialog patientId={patient.id} patientName={patient.display_name} mode="standard" priorNotes={priorNotes} />
                     <CreateDocumentDialog
                         patientId={patient.id}
                         patientName={patient.display_name}
@@ -203,6 +209,7 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                 patientId={patient.id}
                 patientName={patient.display_name}
                 patient={patient}
+                priorNotes={priorNotes}
             />
         </div>
     );

@@ -76,6 +76,7 @@ export function TimelineEntry({ encounter, isLast, patientId, patientName, allEn
     const [copiedNote, setCopiedNote] = useState(false);
     const [copiedLetter, setCopiedLetter] = useState(false);
     const [copiedTranscript, setCopiedTranscript] = useState(false);
+    const [isTranscriptExpanded, setIsTranscriptExpanded] = useState(false);
 
     const noteRef = useRef<HTMLDivElement>(null);
     const letterRef = useRef<HTMLDivElement>(null);
@@ -440,15 +441,18 @@ export function TimelineEntry({ encounter, isLast, patientId, patientName, allEn
                     {/* SMART NOTE TRANSCRIPT */}
                     {hasTranscript && (
                         <div className="space-y-3">
-                            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                                Transcript
-                            </h4>
-                            <ArtifactSection
-                                encounterId={encounter.id}
-                                type="RAW_TRANSCRIPT"
-                                initialArtifact={encounter.artifacts.find(a => a.artifact_type === 'RAW_TRANSCRIPT')}
-                                readOnly
-                            />
+                            <Button variant="outline" size="sm" onClick={() => setIsTranscriptExpanded(value => !value)}>
+                                {isTranscriptExpanded ? <ChevronUp className="h-4 w-4 mr-1" /> : <ChevronDown className="h-4 w-4 mr-1" />}
+                                {isTranscriptExpanded ? 'Hide transcript' : 'Show transcript'}
+                            </Button>
+                            {isTranscriptExpanded && (
+                                <ArtifactSection
+                                    encounterId={encounter.id}
+                                    type="RAW_TRANSCRIPT"
+                                    initialArtifact={encounter.artifacts.find(a => a.artifact_type === 'RAW_TRANSCRIPT')}
+                                    readOnly
+                                />
+                            )}
                         </div>
                     )}
 

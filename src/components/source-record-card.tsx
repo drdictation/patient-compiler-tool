@@ -4,7 +4,7 @@
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Mic, Bot, Copy, Check, Trash2 } from "lucide-react";
+import { Mic, Bot, Copy, Check, Trash2, ChevronDown, ChevronUp } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -21,6 +21,7 @@ export function SourceRecordCard({ record }: { record: SourceRecord }) {
     const [copied, setCopied] = useState(false);
     const [copiedSummary, setCopiedSummary] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [isExpanded, setIsExpanded] = useState(false);
     const router = useRouter();
 
     const handleCopy = () => {
@@ -64,12 +65,21 @@ export function SourceRecordCard({ record }: { record: SourceRecord }) {
             <CardHeader className="py-2 px-4 border-b border-slate-100 flex flex-row items-center justify-between space-y-0">
                 <span className="text-xs font-medium text-slate-500 flex items-center gap-1.5">
                     <Mic className="h-3.5 w-3.5" />
-                    Recorded {new Date(record.created_at_heroku).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    Recorded {new Date(record.created_at_heroku).toLocaleTimeString('en-AU', { timeZone: 'Australia/Melbourne', hour: '2-digit', minute: '2-digit' })} Melbourne time
                 </span>
                 <div className="flex items-center gap-2">
                     <Badge variant="secondary" className="text-[10px] bg-white border-slate-200">
                         Dr Dictation ID: {record.heroku_id}
                     </Badge>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs text-indigo-600"
+                        onClick={() => setIsExpanded(value => !value)}
+                    >
+                        {isExpanded ? <ChevronUp className="h-3.5 w-3.5 mr-1" /> : <ChevronDown className="h-3.5 w-3.5 mr-1" />}
+                        {isExpanded ? 'Hide transcript' : 'Show transcript'}
+                    </Button>
                     <Button
                         variant="ghost"
                         size="sm"
@@ -91,7 +101,7 @@ export function SourceRecordCard({ record }: { record: SourceRecord }) {
                     </Button>
                 </div>
             </CardHeader>
-            <CardContent className="py-3 px-4 text-sm text-slate-700 leading-relaxed">
+            {isExpanded && <CardContent className="py-3 px-4 text-sm text-slate-700 leading-relaxed">
                 <p className="whitespace-pre-wrap font-serif">
                     {record.transcription}
                 </p>
@@ -117,7 +127,7 @@ export function SourceRecordCard({ record }: { record: SourceRecord }) {
                         </p>
                     </div>
                 )}
-            </CardContent>
+            </CardContent>}
         </Card>
     );
 }
