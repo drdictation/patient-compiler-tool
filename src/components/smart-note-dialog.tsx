@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
-import { Sparkles, Mic, Square, Loader2, Check, AlertCircle, FileText, Mail } from 'lucide-react';
+import { Sparkles, Mic, Square, Loader2, Check, AlertCircle, FileText, Mail, UserCheck } from 'lucide-react';
 import { prepareSmartNoteGeneration, generateClinicalDocuments, extractAndSaveTasks, SmartNoteOptions } from '@/app/actions';
 import { CONSULT_NOTE_MODEL } from '@/lib/model-config';
 import { toast } from 'sonner';
@@ -49,6 +49,7 @@ interface GenerationState {
     transcript: GenerationStatus;
     note: GenerationStatus;
     letter: GenerationStatus;
+    patientSummary: GenerationStatus;
     tasks: GenerationStatus;
 }
 
@@ -92,6 +93,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
     const [encounterDate, setEncounterDate] = useState(getMelbourneDate);
     const generateNote = true;
     const generateLetter = true;
+    const [generatePatientSummary, setGeneratePatientSummary] = useState(false);
     const [letterType, setLetterType] = useState<LetterType>('review');
     const [templateType, setTemplateType] = useState<TemplateType>('general');
     const model = CONSULT_NOTE_MODEL;
@@ -104,6 +106,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         transcript: 'idle',
         note: 'idle',
         letter: 'idle',
+        patientSummary: 'idle',
         tasks: 'idle'
     });
 
@@ -288,7 +291,8 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         setIsComplex(false);
         setPronouns('auto');
         setExtractTasksRequested(false);
-        setGenerationState({ transcript: 'idle', note: 'idle', letter: 'idle', tasks: 'idle' });
+        setGeneratePatientSummary(false);
+        setGenerationState({ transcript: 'idle', note: 'idle', letter: 'idle', patientSummary: 'idle', tasks: 'idle' });
         setRecordingDuration(0);
         setAudioSizeMB(0);
         setIsRecording(false);
@@ -319,6 +323,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
             transcript: 'generating',
             note: generateNote ? 'generating' : 'idle',
             letter: generateLetter ? 'generating' : 'idle',
+            patientSummary: generatePatientSummary ? 'generating' : 'idle',
             tasks: extractTasksRequested ? 'generating' : 'idle'
         });
 
@@ -336,6 +341,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                     outputs: {
                         generateNote,
                         generateLetter,
+                        generatePatientSummary,
                         letterType: generateLetter ? letterType : undefined,
                         templateType: generateLetter ? templateType : undefined,
                         isComplex: generateLetter ? isComplex : undefined,
@@ -365,6 +371,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                         transcript: 'error',
                         note: generateNote ? 'error' : 'idle',
                         letter: generateLetter ? 'error' : 'idle',
+                        patientSummary: generatePatientSummary ? 'error' : 'idle',
                         tasks: 'error'
                     });
                 }
@@ -412,7 +419,8 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                     setGenerationState(prev => ({
                         ...prev,
                         note: clinicalResult.note ? (clinicalResult.note.status === 'success' ? 'success' : 'error') : 'idle',
-                        letter: clinicalResult.letter ? (clinicalResult.letter.status === 'success' ? 'success' : 'error') : 'idle'
+                        letter: clinicalResult.letter ? (clinicalResult.letter.status === 'success' ? 'success' : 'error') : 'idle',
+                        patientSummary: clinicalResult.patientSummary ? (clinicalResult.patientSummary.status === 'success' ? 'success' : 'error') : 'idle'
                     }));
                 }
 
@@ -433,6 +441,14 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                         successArtifacts.push('Referrer letter');
                     } else if (clinicalResult.letter.error) {
                         errors.push(`Letter generation failed: ${clinicalResult.letter.error.message}`);
+                    }
+                }
+
+                if (clinicalResult.patientSummary) {
+                    if (clinicalResult.patientSummary.status === 'success') {
+                        successArtifacts.push('Patient summary');
+                    } else if (clinicalResult.patientSummary.error) {
+                        errors.push(`Patient summary generation failed: ${clinicalResult.patientSummary.error.message}`);
                     }
                 }
 
@@ -524,7 +540,11 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
             const combinedTranscript = [transcript.trim(), appendedTranscript].filter(Boolean).join('\n\n');
 
             setTranscript(combinedTranscript);
-            toast.success('Audio transcribed. Generating note and letter...');
+            toast.success(
+                generatePatientSummary
+                    ? 'Audio transcribed. Generating note, letter, and patient summary...'
+                    : 'Audio transcribed. Generating note and letter...'
+            );
             runSmartNoteGeneration(combinedTranscript);
         } catch (error: any) {
             console.error('[SmartNote] Transcription error:', error);
@@ -713,15 +733,27 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
 
                             <div className="space-y-2">
                                 <Label>Outputs</Label>
-                                <div className="flex flex-wrap items-center gap-6 pt-1 text-sm text-muted-foreground">
-                                    <div className="flex items-center gap-2">
-                                        <FileText className="h-4 w-4" />
+                                <div className="flex flex-wrap items-center gap-3 pt-1 text-sm text-muted-foreground">
+                                    <div className="flex items-center gap-1.5 text-slate-700">
+                                        <FileText className="h-4 w-4 text-blue-600" />
                                         <span>Consult note</span>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        <Mail className="h-4 w-4" />
+                                    <div className="flex items-center gap-1.5 text-slate-700">
+                                        <Mail className="h-4 w-4 text-purple-600" />
                                         <span>Letter</span>
                                     </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setGeneratePatientSummary(prev => !prev)}
+                                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
+                                            generatePatientSummary
+                                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-xs'
+                                                : 'bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200'
+                                        }`}
+                                    >
+                                        <UserCheck className="h-3.5 w-3.5" />
+                                        <span>Patient summary {generatePatientSummary ? '(included)' : '(click to add)'}</span>
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -730,7 +762,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                             <div className="space-y-2">
                                 <Label>AI models</Label>
                                 <div className="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700">
-                                    Notes: Gemini 3.1 Flash-Lite<br />Letters: GPT-5.6 Luna
+                                    Notes &amp; Summary: Gemini 3.1 Flash-Lite<br />Letters: GPT-5.6 Luna
                                 </div>
                             </div>
 
@@ -852,6 +884,22 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                                             <Square className="h-5 w-5" />
                                             Stop Recording
                                         </Button>
+                                        <div className="pt-1 flex justify-center">
+                                            <Button
+                                                type="button"
+                                                size="sm"
+                                                variant={generatePatientSummary ? "default" : "outline"}
+                                                onClick={() => setGeneratePatientSummary(prev => !prev)}
+                                                className={`gap-1.5 text-xs transition-all ${
+                                                    generatePatientSummary
+                                                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm ring-2 ring-emerald-200'
+                                                        : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100'
+                                                }`}
+                                            >
+                                                <UserCheck className="h-3.5 w-3.5" />
+                                                {generatePatientSummary ? '✓ Patient summary will be created at end' : '+ Create Patient Summary at end'}
+                                            </Button>
+                                        </div>
                                     </div>
                                 )}
 
@@ -921,12 +969,16 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                     {(generationState.transcript !== 'idle' ||
                         generationState.note !== 'idle' ||
                         generationState.letter !== 'idle' ||
+                        generationState.patientSummary !== 'idle' ||
                         generationState.tasks !== 'idle') && (
                             <div className="border rounded-lg p-4 bg-gray-50 space-y-2">
                                 <Label className="text-sm font-medium">Generation Progress</Label>
                                 <StatusIndicator status={generationState.transcript} label="Saving transcript" />
                                 <StatusIndicator status={generationState.note} label="Generating note" />
                                 <StatusIndicator status={generationState.letter} label="Generating letter" />
+                                {generatePatientSummary && (
+                                    <StatusIndicator status={generationState.patientSummary} label="Generating patient summary" />
+                                )}
                                 <StatusIndicator status={generationState.tasks} label="Extracting tasks" />
                             </div>
                         )}
@@ -965,10 +1017,19 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                     </aside>
                 </div>
 
-                <DialogFooter className="mt-4">
+                <DialogFooter className="mt-4 flex-wrap gap-2 sm:gap-0">
                     <>
                         <Button variant="outline" onClick={() => setOpen(false)} disabled={isPreparing || isGeneratingClinical}>
                             Cancel
+                        </Button>
+                        <Button
+                            type="button"
+                            variant={generatePatientSummary ? 'secondary' : 'outline'}
+                            onClick={() => setGeneratePatientSummary((prev) => !prev)}
+                            disabled={isPreparing || isGeneratingClinical}
+                            className={generatePatientSummary ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : ''}
+                        >
+                            {generatePatientSummary ? '✓ Patient summary included' : '+ Include patient summary'}
                         </Button>
                         <Button
                             type="button"

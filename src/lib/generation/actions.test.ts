@@ -230,6 +230,7 @@ test('Database Flow and Context Generation', async (t) => {
         assert.strictEqual(context.transcriptArtifactId, 'art-789');
         assert.strictEqual(context.outputs.generateNote, true);
         assert.strictEqual(context.outputs.generateLetter, true);
+        assert.strictEqual(context.outputs.generatePatientSummary, false);
         assert.strictEqual(context.model, 'gemini-2.5-flash');
         assert.strictEqual(context.extractTasks, false);
 
@@ -238,6 +239,13 @@ test('Database Flow and Context Generation', async (t) => {
         assert.strictEqual(callCount.canonical_patient, 1);
         assert.strictEqual(callCount.encounter_select, 1);
         assert.strictEqual(callCount.artifact_select, 1);
+
+        // Also verify generatePatientSummary: true
+        const contextWithSummary = await prepareSmartNoteGeneration({
+            ...options,
+            outputs: { ...options.outputs, generatePatientSummary: true }
+        });
+        assert.strictEqual(contextWithSummary.outputs.generatePatientSummary, true);
     });
 
     await t.test('fails when raw transcript persistence fails', async () => {

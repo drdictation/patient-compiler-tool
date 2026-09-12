@@ -46,6 +46,7 @@ export interface PreparedSmartNoteContext {
     outputs: {
         generateNote: boolean;
         generateLetter: boolean;
+        generatePatientSummary?: boolean;
         letterType?: 'new' | 'review';
         templateType?: 'general' | 'ibd' | 'functional' | 'oesophageal' | 'eoe';
         /** @deprecated Use detailLevel instead. Kept for backwards compatibility during migration. */
@@ -69,6 +70,7 @@ export interface DocumentGenerationResult {
 export interface ClinicalGenerationResult {
     note?: DocumentGenerationResult;
     letter?: DocumentGenerationResult;
+    patientSummary?: DocumentGenerationResult;
 }
 
 export interface TaskGenerationResult {

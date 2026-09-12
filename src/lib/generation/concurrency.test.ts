@@ -155,6 +155,108 @@ Dr. Smith
             globalThis.fetch = originalFetch;
         }
     });
+
+    await t.test('calls note, letter, and patient summary concurrently when requested', async () => {
+        supabaseClient.from = (table: string): unknown => {
+            const chainable = {
+                select: () => chainable,
+                eq: () => chainable,
+                single: async () => {
+                    if (table === 'artifact') {
+                        return { data: { id: 'art-id', current_version: 1 }, error: null };
+                    }
+                    return { data: null, error: null };
+                },
+                insert: () => chainable,
+                update: () => chainable,
+                then: async (resolve: (val: unknown) => void) => {
+                    return resolve({ data: {}, error: null });
+                }
+            };
+            return chainable;
+        };
+
+        const context: PreparedSmartNoteContext = {
+            requestId: 'req-summary-123',
+            patientId: 'pat-123',
+            patientName: 'Authoritative Patient Name',
+            encounterId: 'enc-456',
+            encounterDate: '2026-07-12',
+            formattedDate: '12 July 2026',
+            normalisedTranscript: 'a '.repeat(50),
+            transcriptHash: 'hash-123',
+            transcriptArtifactId: 'art-transcript',
+            noteType: 'new_consult',
+            outputs: {
+                generateNote: true,
+                generateLetter: true,
+                generatePatientSummary: true,
+                letterType: 'review',
+                templateType: 'general'
+            },
+            model: 'gemini-2.5-flash',
+            extractTasks: false,
+            promptVersion: '1.0'
+        };
+
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = (async (input: RequestInfo | URL) => {
+            await new Promise(r => setTimeout(r, 50));
+            if (String(input).includes('api.openai.com')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        output_text: `# Summary\nThe patient had a follow-up consultation today.\n\n# Impression and Plan\nWe will continue monitoring.\n\nKind regards,\nDr. Smith`,
+                        status: 'completed',
+                        usage: { input_tokens: 10, output_tokens: 20 }
+                    })
+                } as unknown as Response;
+            }
+            return {
+                ok: true,
+                json: async () => ({
+                    candidates: [
+                        {
+                            content: {
+                                parts: [
+                                    {
+                                        text: `
+# Summary
+The patient had a follow-up consultation today. They are feeling well.
+
+# Impression and Plan
+We will continue monitoring the current plan.
+Kind regards,
+Dr. Smith
+                                        `.trim()
+                                    }
+                                ]
+                            }
+                        }
+                    ],
+                    usageMetadata: {
+                        promptTokenCount: 10,
+                        candidatesTokenCount: 20
+                    }
+                })
+            } as unknown as Response;
+        }) as typeof fetch;
+
+        try {
+            const start = Date.now();
+            const result = await generateClinicalDocuments(context);
+            const elapsed = Date.now() - start;
+
+            assert.ok(elapsed < 120, `Execution took ${elapsed}ms, which suggests sequential execution instead of parallel`);
+            
+            assert.strictEqual(result.note?.status, 'success');
+            assert.strictEqual(result.letter?.status, 'success');
+            assert.strictEqual(result.patientSummary?.status, 'success');
+            assert.strictEqual(result.patientSummary?.artifactId, 'art-id');
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+    });
 });
 
 test('Batch Task Persistence', async (t) => {

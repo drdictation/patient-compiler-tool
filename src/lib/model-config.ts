@@ -9,3 +9,4 @@ export type SmartNoteModel =
 
 export const CONSULT_NOTE_MODEL: SmartNoteModel = 'gemini-3.1-flash-lite';
 export const CONSULT_LETTER_MODEL: SmartNoteModel = 'gpt-5.6-luna';
+export const PATIENT_SUMMARY_MODEL: SmartNoteModel = 'gemini-3.1-flash-lite';

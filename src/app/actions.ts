@@ -476,7 +476,7 @@ export async function getPatientTasks(patientId: string) {
 
 // ============ SMART NOTE CREATION ============
 import { generateFromPrompt, SmartNoteGenerationResult, extractTasks } from '@/lib/llm';
-import { SmartNoteModel, CONSULT_NOTE_MODEL, CONSULT_LETTER_MODEL } from '@/lib/model-config';
+import { SmartNoteModel, CONSULT_NOTE_MODEL, CONSULT_LETTER_MODEL, PATIENT_SUMMARY_MODEL } from '@/lib/model-config';
 import { PROMPTS } from '@/lib/prompts';
 import { resolveLetterPrompt, DETAILED_LETTER_DIRECTIVE } from '@/lib/prompts/registry';
 import { postProcessLetter } from '@/lib/letter-post-processing';
@@ -494,6 +494,7 @@ export interface SmartNoteOptions {
     outputs: {
         generateNote: boolean;
         generateLetter: boolean;
+        generatePatientSummary?: boolean;
         letterType?: 'new' | 'review';
         templateType?: 'general' | 'ibd' | 'functional' | 'oesophageal' | 'eoe';
         isComplex?: boolean;
@@ -755,6 +756,7 @@ export async function prepareSmartNoteGeneration(options: SmartNoteOptions): Pro
         outputs: {
             generateNote: !!outputs.generateNote,
             generateLetter: !!outputs.generateLetter,
+            generatePatientSummary: !!outputs.generatePatientSummary,
             letterType: outputs.letterType,
             templateType: outputs.templateType,
             isComplex: !!outputs.isComplex,
@@ -912,6 +914,63 @@ export async function generateClinicalDocuments(context: PreparedSmartNoteContex
         promises.push(generateLetterPromise);
     } else {
         result.letter = { status: 'skipped' };
+    }
+
+    // 3. Patient Summary Generation
+    if (context.outputs.generatePatientSummary) {
+        const generateSummaryPromise = (async () => {
+            try {
+                const { PATIENT_SUMMARY } = await import('@/lib/prompts/patient-summary');
+                const systemInstructions = PATIENT_SUMMARY
+                    .replaceAll('{{PATIENT_NAME}}', context.patientName)
+                    .replaceAll('{{DATE}}', context.formattedDate || '')
+                    .replaceAll('{{TRANSCRIPT}}', '')
+                    .replaceAll('{{ADDITIONAL_CONTEXT}}', '');
+
+                const genResult = await generateFromPrompt({
+                    systemInstructions,
+                    transcript: context.normalisedTranscript,
+                    metadata: {
+                        patientName: context.patientName,
+                        date: context.formattedDate,
+                        documentType: 'patient_summary',
+                        templateType: 'patient_summary',
+                        pronouns: context.outputs.pronouns
+                    },
+                    model: PATIENT_SUMMARY_MODEL,
+                    purpose: 'smart_note_patient_summary',
+                    patientId: context.patientId,
+                    requestId: context.requestId
+                });
+
+                if (genResult.blocked) {
+                    throw new Error(`Generation was blocked by the provider: ${genResult.blockReason || 'Safety block'}`);
+                }
+                if (genResult.finishReason && genResult.finishReason !== 'STOP' && genResult.finishReason !== 'UNKNOWN') {
+                    throw new Error(`Incomplete generation: provider reported finish reason as "${genResult.finishReason}"`);
+                }
+
+                const content = genResult.content;
+                const artifactId = await saveArtifact(context.encounterId, 'PATIENT_SUMMARY', content);
+                result.patientSummary = {
+                    status: 'success',
+                    artifactId,
+                    content
+                };
+            } catch (e: any) {
+                console.error('Patient summary generation failed:', e);
+                result.patientSummary = {
+                    status: 'failed',
+                    error: {
+                        code: 'PROVIDER_ERROR',
+                        message: e.message || 'Patient summary generation failed.'
+                    }
+                };
+            }
+        })();
+        promises.push(generateSummaryPromise);
+    } else {
+        result.patientSummary = { status: 'skipped' };
     }
 
     // Run concurrently and wait for all to settle
