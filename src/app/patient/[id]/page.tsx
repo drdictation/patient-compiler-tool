@@ -21,6 +21,7 @@ import { GlobalSearch } from '@/components/global-search';
 import { AddPatientDialog } from '@/components/add-patient-dialog';
 import { CreateDocumentDialog } from '@/components/create-document-dialog';
 import { TranscriptsPanel } from '@/components/transcripts-panel';
+import { PatientMobileView } from '@/components/patient-mobile-view';
 import { notFound } from 'next/navigation';
 
 export const dynamic = 'force-dynamic';
@@ -120,13 +121,12 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                     <GlobalSearch />
                 </div>
 
-                {/* Mobile: search + name only */}
-                <div className="sm:hidden flex items-center gap-2">
+                {/* Mobile: search + clean name (prevents accidental touch rename) */}
+                <div className="sm:hidden flex items-center gap-2 min-w-0 flex-1">
                     <GlobalSearch />
-                    <EditablePatientTitle
-                        patientId={patient.id}
-                        initialName={patient.display_name}
-                    />
+                    <h1 className="text-base font-bold text-slate-900 truncate">
+                        {patient.display_name}
+                    </h1>
                 </div>
 
                 {/* Secondary patient actions — pushed to the right on desktop */}
@@ -156,8 +156,19 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                 />
 
                 {/* Main Content Area - Add bottom padding on mobile for action bar */}
-                <main className="flex-1 overflow-y-auto print:overflow-visible pb-20 md:pb-0">
-                    <div className="max-w-5xl mx-auto px-4 lg:px-8 py-8 space-y-8 print:max-w-full print:px-0">
+                <main className="flex-1 overflow-y-auto print:overflow-visible pb-24 md:pb-0">
+                    {/* Mobile: Purpose-built 3-tab switcher */}
+                    <PatientMobileView
+                        patient={patient}
+                        timeline={timeline}
+                        issues={issues}
+                        investigations={investigations}
+                        interventions={interventions}
+                        tasks={tasks}
+                    />
+
+                    {/* Desktop: Full vertical panels (100% UNCHANGED) */}
+                    <div className="hidden md:block max-w-5xl mx-auto px-4 lg:px-8 py-8 space-y-8 print:max-w-full print:px-0">
 
                         {/* TIMELINE — shown first for quick access */}
                         <section id="timeline" className="space-y-2">

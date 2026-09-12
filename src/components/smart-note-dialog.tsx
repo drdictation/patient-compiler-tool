@@ -30,6 +30,7 @@ import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { getMelbourneDate } from '@/lib/date-time';
 import ReactMarkdown from 'react-markdown';
+import { requestScreenWakeLock, releaseScreenWakeLock } from '@/lib/audio/wake-lock';
 
 interface SmartNoteDialogProps {
     patientId: string;
@@ -129,6 +130,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
             if (streamRef.current) {
                 streamRef.current.getTracks().forEach(track => track.stop());
             }
+            releaseScreenWakeLock();
         };
     }, []); // Empty dependency array - only run cleanup on unmount
 
@@ -138,6 +140,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             streamRef.current = stream;
+            await requestScreenWakeLock();
 
             // Use Opus codec with lower bitrate for strict Vercel 4.5MB limits
             const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
@@ -282,6 +285,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
 
     const resetState = () => {
         stopRecording(); // Release audio resources cleanly
+        releaseScreenWakeLock();
 
         setTranscript('');
         setNoteType('review_consult');
@@ -484,6 +488,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                     }));
                     toast.error(`Clinical generation failed: ${e.message}`);
                 }
+                releaseScreenWakeLock();
             }
         });
     };

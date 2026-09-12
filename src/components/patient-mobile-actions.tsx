@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, FileText, Scan, UserCog } from "lucide-react";
-import { Dialog, DialogTrigger } from "@/components/ui/dialog";
+import { Mic } from "lucide-react";
 import { AddNoteDialog } from "@/components/add-note-dialog";
 import { SmartNoteDialog } from "@/components/smart-note-dialog";
 import { GlobalScanButton } from "@/components/global-scan-button";
 import { PatientInfoToggle } from "@/components/patient-info-toggle";
+import { MobileConsultSheet } from "@/components/mobile-consult-sheet";
 import { PatientDetails } from "@/lib/data";
 
 interface PatientMobileActionsProps {
@@ -18,24 +18,49 @@ interface PatientMobileActionsProps {
 }
 
 export function PatientMobileActions({ patientId, patientName, patient, priorNotes = [] }: PatientMobileActionsProps) {
+    const [mobileConsultOpen, setMobileConsultOpen] = useState(false);
+
     return (
-        <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-white border-t shadow-lg safe-area-inset-bottom">
-            <div className="flex items-center justify-around px-2 py-2">
-                {/* Add Note - inline dialog */}
-                <AddNoteDialog patientId={patientId} asMobileButton />
+        <>
+            <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-white/95 backdrop-blur-md border-t shadow-lg safe-area-inset-bottom">
+                <div className="flex items-center justify-around px-3 py-1.5 max-w-md mx-auto">
+                    {/* Patient Info */}
+                    <PatientInfoToggle patient={patient} asMobileButton />
 
-                {/* Quick Record - inline dialog */}
-                <SmartNoteDialog patientId={patientId} patientName={patientName} asMobileButton mode="quick-record" priorNotes={priorNotes} />
+                    {/* Manual Note */}
+                    <AddNoteDialog patientId={patientId} asMobileButton />
 
-                {/* Smart Note - inline dialog */}
-                <SmartNoteDialog patientId={patientId} patientName={patientName} asMobileButton mode="standard" priorNotes={priorNotes} />
+                    {/* Prominent Centerpiece: Mobile Record Consult */}
+                    <Button
+                        onClick={() => setMobileConsultOpen(true)}
+                        className="h-12 px-5 gap-2 rounded-full bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white font-bold text-xs shadow-md active:scale-95 transition-all -mt-3 border-2 border-white ring-2 ring-rose-100"
+                    >
+                        <Mic className="h-5 w-5" />
+                        <span>Record</span>
+                    </Button>
 
-                {/* Global Scan */}
-                <GlobalScanButton patientId={patientId} asMobileButton />
+                    {/* Global Scan */}
+                    <GlobalScanButton patientId={patientId} asMobileButton />
 
-                {/* Patient Details */}
-                <PatientInfoToggle patient={patient} asMobileButton />
+                    {/* Full Smart Note Dialog (for paste / advanced settings) */}
+                    <SmartNoteDialog
+                        patientId={patientId}
+                        patientName={patientName}
+                        asMobileButton
+                        mode="standard"
+                        priorNotes={priorNotes}
+                    />
+                </div>
             </div>
-        </div>
+
+            {/* Purpose-Built Mobile Consult Sheet */}
+            <MobileConsultSheet
+                open={mobileConsultOpen}
+                onOpenChange={setMobileConsultOpen}
+                patientId={patientId}
+                patientName={patientName}
+                priorNotes={priorNotes}
+            />
+        </>
     );
 }

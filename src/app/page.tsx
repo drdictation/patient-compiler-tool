@@ -9,6 +9,7 @@ import { LLMCostDisplay } from '@/components/llm-cost-display';
 import { TasksSidebar } from '@/components/tasks-sidebar';
 import { GlobalSearch } from '@/components/global-search';
 import { EndoscopyListDialog } from '@/components/endoscopy-list-dialog';
+import { MobileHeaderActions } from '@/components/mobile-header-actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -113,27 +114,11 @@ export default async function Dashboard(props: DashboardProps) {
             </p>
           </div>
 
-          {/* Mobile-only compact action buttons */}
-          <div className="flex gap-2 md:hidden">
-            <EndoscopyListDialog patients={patients || []} />
-            <AddPatientDialog />
-            <GlobalSearch />
-            <TasksSidebar />
-            <Link href="/inbox">
-              <Button variant="outline" size="icon" title="Inbox">
-                <Inbox className="h-4 w-4" />
-              </Button>
-            </Link>
-            <Link href="/search">
-              <Button variant="outline" size="icon" title="Search">
-                <Search className="h-4 w-4" />
-              </Button>
-            </Link>
-            <SyncButton />
-          </div>
+          {/* Mobile-only clean overflow header */}
+          <MobileHeaderActions patients={patients || []} />
         </div>
 
-        {/* Desktop: LLM Cost Widget + Actions Row */}
+        {/* Desktop: LLM Cost Widget + Actions Row (100% UNCHANGED) */}
         <div className="hidden md:flex items-center gap-4">
           <div className="w-64 h-24">
             <LLMCostDisplay />

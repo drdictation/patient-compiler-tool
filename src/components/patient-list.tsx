@@ -12,11 +12,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { PatientRowActions } from '@/components/patient-row-actions';
-import { Trash2, Merge, X, Search, Filter, FileText, MessageSquare, Loader2, Check } from 'lucide-react';
+import { Trash2, Merge, X, Search, Filter, FileText, MessageSquare, Loader2, Check, Mic } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useDebounce } from 'use-debounce';
 import ReactMarkdown from 'react-markdown';
 import { getLatestPatientArtifact } from '@/app/actions';
+import { MobileConsultSheet } from '@/components/mobile-consult-sheet';
 
 interface Patient {
     id: string;
@@ -184,6 +185,8 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
     const [filterSuggested, setFilterSuggested] = useState(searchParams.get('filter_suggested') === 'true');
 
     // Managing Filters
+    const [activeRecordPatient, setActiveRecordPatient] = useState<{ id: string; name: string } | null>(null);
+
     const createQueryString = useCallback((name: string, value: string) => {
         const params = new URLSearchParams(searchParams.toString());
         if (value) params.set(name, value);
@@ -554,21 +557,6 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                                                 )}
                                             </div>
                                         </Link>
-                                        
-                                        {patient.encounter_count > 0 && (
-                                            <div className="flex items-center gap-2 mt-3">
-                                                <QuickCopyButton
-                                                    patientId={patient.id}
-                                                    type="INTERNAL_NOTE"
-                                                    label="Note"
-                                                />
-                                                <QuickCopyButton
-                                                    patientId={patient.id}
-                                                    type="REFERRER_LETTER"
-                                                    label="Letter"
-                                                />
-                                            </div>
-                                        )}
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2">
@@ -588,10 +576,52 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                                     />
                                 </div>
                             </div>
+
+                            {/* Mobile 1-Tap Record & Quick Actions */}
+                            <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                                <Button
+                                    size="sm"
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        setActiveRecordPatient({ id: patient.id, name: patient.display_name });
+                                    }}
+                                    className="flex-1 h-10 gap-2 rounded-xl bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white font-semibold text-xs shadow-sm active:scale-[0.98] transition-all"
+                                >
+                                    <Mic className="h-4 w-4" />
+                                    Record Consult
+                                </Button>
+                                {patient.encounter_count > 0 && (
+                                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                                        <QuickCopyButton
+                                            patientId={patient.id}
+                                            type="INTERNAL_NOTE"
+                                            label="Note"
+                                        />
+                                        <QuickCopyButton
+                                            patientId={patient.id}
+                                            type="REFERRER_LETTER"
+                                            label="Letter"
+                                        />
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     ))}
                 </div>
             </div>
+
+            {/* Purpose-Built Mobile Consult Sheet */}
+            {activeRecordPatient && (
+                <MobileConsultSheet
+                    open={!!activeRecordPatient}
+                    onOpenChange={(open) => {
+                        if (!open) setActiveRecordPatient(null);
+                    }}
+                    patientId={activeRecordPatient.id}
+                    patientName={activeRecordPatient.name}
+                />
+            )}
         </div>
     );
 }
