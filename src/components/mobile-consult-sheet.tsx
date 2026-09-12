@@ -346,7 +346,7 @@ export function MobileConsultSheet({
         <Sheet open={open} onOpenChange={onOpenChange}>
             <SheetContent
                 side="bottom"
-                className="p-0 rounded-t-3xl max-h-[92vh] flex flex-col border-t bg-white shadow-2xl safe-area-inset-bottom"
+                className="p-0 rounded-t-3xl max-h-[92vh] flex flex-col border-t bg-white shadow-2xl safe-area-inset-bottom sm:max-w-xl sm:mx-auto sm:rounded-t-2xl sm:border-x sm:border-slate-200"
             >
                 {/* Drag / Pull Indicator */}
                 <div className="pt-3 pb-1 flex justify-center">
@@ -360,7 +360,7 @@ export function MobileConsultSheet({
                             {patientName}
                         </SheetTitle>
                         <p className="text-xs text-slate-500 font-medium">
-                            Endoscopy Suite Consultation
+                            Consultation Recording
                         </p>
                     </div>
                     {wakeLockActive && (

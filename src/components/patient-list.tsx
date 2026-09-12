@@ -494,7 +494,21 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                                         )}
                                     </td>
                                     <td className="py-3 px-4 text-right">
-                                        <div className="flex justify-end items-center gap-4">
+                                        <div className="flex justify-end items-center gap-2">
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    setActiveRecordPatient({ id: patient.id, name: patient.display_name });
+                                                }}
+                                                className="h-7 px-2.5 gap-1.5 text-xs font-semibold text-rose-600 border-rose-200 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300 shadow-2xs transition-all active:scale-95"
+                                                title="Record Consult"
+                                            >
+                                                <Mic className="h-3.5 w-3.5 text-rose-500" />
+                                                <span>Record</span>
+                                            </Button>
                                             <div className="text-slate-300 hover:text-slate-900 transition-colors">
                                                 <PatientRowActions
                                                     patientId={patient.id}
