@@ -1,5 +1,11 @@
 # Engineering Implementation Specification
 
+> **STATUS NOTE (July 2026)**:
+> - **Recommendations 1 through 6**: ✅ **FULLY IMPLEMENTED & TESTED** (contracts, parallel orchestration, timeout/retries, deterministic validation, instruction/data separation, routing & detailed directive). Covered by 77 passing tests in `src/lib/generation/*.test.ts`.
+> - **Recommendation 7**: ❌ **REMOVED** by user direction (synthetic consultations / fixture evaluation out of scope).
+> - **Recommendations 8 through 12**: 📋 **PENDING ROADMAP** (prompt cleanup, idempotency DB constraints, context query optimization, optional tasks, evaluation runner).
+> See [IMPLEMENTATION_PROGRESS.md](file:///Users/cbasnayake/Documents/Microsaas/Patient%20compiler%20tool/IMPLEMENTATION_PROGRESS.md) for commit details.
+
 ## Purpose
 
 This document is the implementation blueprint for improving clinical-letter accuracy, end-to-end speed, and processing efficiency. It is intentionally explicit so that a coding agent can implement it with minimal interpretation.

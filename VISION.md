@@ -110,15 +110,17 @@ This tool is designed for a **gastroenterology practice** including:
 2. ✅ **Intervention Timeline** — Log of treatments/diets/procedures with responses
 3. ✅ **Investigations Dashboard** — Tests done, pending, and recall schedule
 
-### Phase 2: Intelligence ✅ COMPLETE
-4. ✅ **Smart Notes** — AI-generated notes and letters from transcripts/audio
-5. ✅ **Pre-Visit Brief** — On-demand patient summary before appointments
-6. ✅ **Task Extraction** — AI extracts clinical/administrative/follow-up tasks
+### Phase 2: Intelligence & Clinical Ingestion ✅ COMPLETE
+4. ✅ **Smart Notes v2** — Decoupled concurrent generation of consult notes and subspecialty referrer letters (`gpt-5.6-luna`, `gemini-3.1-flash-lite`), protected by deterministic clinical validation (10 fatal rules + 6 warnings).
+5. ✅ **Pre-Visit Brief** — On-demand clinical synthesis before outpatient encounters.
+6. ✅ **Endoscopy List Briefing** — Batch multi-patient generator for rapid 15-second procedural briefing cards.
+7. ✅ **Task Extraction & Management** — Groq Llama 4 powered task extraction with cross-patient sidebar and snooze capabilities.
+8. ✅ **Gmail Inbox & Voice Capture** — Ingest forwarded emails and iOS voice memos with AI patient matching.
 
-### Phase 3: Polish 🚧 IN PROGRESS
-7. ⬜ **Symptom Tracking View** — Longitudinal visual of symptom evolution
-8. ⬜ **Recall/Follow-up Management** — Surface upcoming surveillance scopes, follow-up tests
-9. ⬜ **Encounter Summarisation** — AI-generated summaries (1-liner, 3-bullet, full)
+### Phase 3: Polish & Longitudinal Views 🚧 IN PROGRESS
+9. ⬜ **Symptom Tracking View** — Longitudinal visual representation of symptom evolution over encounters.
+10. ⬜ **Dedicated Surveillance/Recall Calendar** — Surface upcoming colonoscopy surveillance and test recall alerts.
+11. ⬜ **Encounter Summarisation** — Compact 1-liner and 3-bullet summary pills directly on the timeline view.
 
 ---
 

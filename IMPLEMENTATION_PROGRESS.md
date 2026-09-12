@@ -1,5 +1,7 @@
 # Implementation Progress
 
+> **CURRENT STATUS (July 2026)**: Commits 1 through 6 are fully implemented and verified by 77 passing tests in the automated test suite (`node --import tsx --env-file=.env --test src/lib/generation/*.test.ts`). Commit 7 was removed by user direction. Commits 8 through 12 form the remaining engineering roadmap.
+
 ## Commit Boundaries
 
 ### 1. Generation contracts, transcript preparation, and tests

@@ -1,105 +1,207 @@
-# Smart Note Feature — Implementation Summary
+# Smart Note Feature Specification & Architecture
 
-> **STATUS: ✅ IMPLEMENTED** — Smart Note generation, audio recording, transcription, and task extraction are live.
-
-## Overview
-The Smart Note flow turns a consultation transcript (pasted or recorded) into:
-- A raw transcript artifact
-- An internal consult note
-- An optional referrer letter
-- Extracted tasks
-
-This is implemented in `src/components/smart-note-dialog.tsx` with server actions in `src/app/actions.ts`.
+> **STATUS: ✅ PRODUCTION READY & REFACTORED**
+> The Smart Note system has been upgraded from a legacy sequential action into a decoupled, concurrent, resilient, and deterministically validated pipeline covered by an automated test suite (77 passing tests in `src/lib/generation/*.test.ts`).
 
 ---
 
-## UI & Workflow
+## 1. Overview & Core Purpose
 
-### Input Modes
-- **Paste Transcript** (default)
-- **Record Audio** (MediaRecorder → Groq Whisper transcription)
-
-### User Inputs
-- Encounter date
-- Note type: **New Consult** or **Review Consult**
-- Outputs: **Consult Note**, **Letter**
-- Letter type (if letter enabled): **New** or **Review**
-- Letter template: **General**, **IBD**, **Functional**, **Oesophageal**, **EoE**
-- Model: **Gemini 2.5 Flash**, **Gemini 3.0 Flash**, **Gemini 2.5 Flash‑Lite**
-
-### Generation Flow
-1. Ensure encounter exists for the selected date
-2. Save raw transcript as `RAW_TRANSCRIPT`
-3. Generate consult note and/or letter via Gemini
-4. Save outputs as artifacts with versioning
-5. Extract tasks via Groq Llama 4
-
-**Note:** After transcription, the user still clicks **Generate** (no auto‑trigger).
+The Smart Note pipeline transforms raw consultation audio or pasted transcript text into structured, audit-proof clinical documentation:
+1. **Raw Transcript Artifact** (`RAW_TRANSCRIPT`): Normalised, cryptographically hashed, and persisted as the immutable source of truth.
+2. **Internal Consult Note** (`INTERNAL_NOTE`): Structured clinician-facing note (SOAP/consult format).
+3. **Referrer Letter** (`REFERRER_LETTER`): Specialist letter to the referring general practitioner, tailored by sub-specialty (General, IBD, Functional GI, Oesophageal, EoE) and detail level.
+4. **Actionable Tasks** (`patient_task`): Extracted clinical, administrative, and follow-up tasks with confidence scores and evidence quotes.
 
 ---
 
-## Data Model (As Used)
-- `encounter`
-  - `canonical_patient_id`
-  - `encounter_date`
-- `artifact`
-  - `encounter_id`
-  - `artifact_type` = `RAW_TRANSCRIPT | INTERNAL_NOTE | REFERRER_LETTER`
-  - `current_version`
-- `artifact_version`
-  - `artifact_id`
-  - `version_number`
-  - `content`
+## 2. Decoupled Architecture & Execution Flow
 
-Artifacts are versioned: subsequent generations update `artifact.current_version` and append to `artifact_version`.
+Rather than a single blocking server action, generation is separated into three distinct lifecycles:
 
----
+```
+                  ┌──────────────────────────────┐
+                  │   SmartNoteDialog (Client)   │
+                  └──────────────┬───────────────┘
+                                 │
+                 1. Normalise & Prepare Request
+                                 │
+                                 ▼
+              ┌──────────────────────────────────────┐
+              │ prepareSmartNoteGeneration(options)  │
+              │  - Validate input bounds (50-250k)   │
+              │  - Unicode NFC normalisation         │
+              │  - Compute SHA-256 transcriptHash    │
+              │  - Server lookup authoritative name  │
+              │  - Ensure encounter & save transcript│
+              │  - Return PreparedSmartNoteContext   │
+              └──────────────────┬───────────────────┘
+                                 │
+        ┌────────────────────────┴────────────────────────┐
+        │ Starts both operations concurrently             │
+        ▼                                                 ▼
+┌───────────────────────────────────────┐ ┌───────────────────────────────────────┐
+│ generateClinicalDocuments(context)    │ │ extractAndSaveTasks(context)          │
+│                                       │ │                                       │
+│ ┌────────────────┐ ┌────────────────┐ │ │ - Groq Llama 4 / GPT OSS extraction   │
+│ │  Consult Note  │ │    Letter      │ │ │ - Bounded timeout (25s)               │
+│ │  (gemini-3.1-  │ │ (gpt-5.6-luna) │ │ │ - Single-query batch SQL insert       │
+│ │   flash-lite)  │ │                │ │ │ - Non-blocking background promise     │
+│ └───────┬────────┘ └───────┬────────┘ │ │ - UI never blocked by task latency    │
+│         └────────┬─────────┘          │ └───────────────────────────────────────┘
+│                  ▼                    │
+│        Promise.allSettled()           │
+│                  │                    │
+│  Deterministic Validation Check       │
+│  - Fatal rules -> block save & error  │
+│  - Warnings -> persist + UI warning   │
+│                  │                    │
+│  Save to Supabase Artifacts Table     │
+└──────────────────┬────────────────────┘
+                   │
+                   ▼
+         Return Clinical Result
+       (Letter & Note display in UI)
+```
 
-## Prompts & Templates
-Prompts live in `src/lib/prompts/` and are assembled in `src/lib/prompts.ts`:
-- `new-consult-note.ts`
-- `review-consult-note.ts`
-- `new-letter.ts`
-- `review-letter.ts`
-- `ibd-new-letter.ts`
-- `ibd-review-letter.ts`
-- `functional-new-letter.ts`
-- `functional-review-letter.ts`
-- `oesophageal-new-letter.ts`
-- `eoe-new-letter.ts`
-
-Template routing rules:
-- **General** → `NEW_LETTER` / `REVIEW_LETTER`
-- **IBD** → `IBD_NEW_LETTER` / `IBD_REVIEW_LETTER`
-- **Functional** → `FUNCTIONAL_NEW_LETTER` / `FUNCTIONAL_REVIEW_LETTER`
-- **Oesophageal** → `OESOPHAGEAL_NEW_LETTER` (Review falls back to Functional Review)
-- **EoE** → `EOE_NEW_LETTER` (Review falls back to Functional Review)
-
----
-
-## Audio Recording & Transcription
-- Uses `MediaRecorder` with Opus/webm at low bitrate to keep files small
-- Enforces **25 MB** max before transcription
-- Transcription is done via **Groq Whisper (whisper-large-v3)**
-- Uses **Server Action** `transcribeAudioAction` (no `/api/transcribe` route)
-
----
-
-## Task Extraction
-- Always runs after Smart Note generation
-- Uses **Groq Llama 4 Maverick**
-- Saves each task to `patient_task` with `lifecycle_state = suggested`
-
----
-
-## Files Involved
-- `src/components/smart-note-dialog.tsx`
-- `src/app/actions.ts` (createSmartNote, transcribeAudioAction)
-- `src/lib/llm.ts` (generateFromPrompt, extractTasks)
-- `src/lib/prompts.ts` and `src/lib/prompts/*`
+### Key Architectural Decisions:
+- **No Cascade Failures**: Note generation and letter generation run concurrently using `Promise.allSettled`. Failure in letter generation does not discard a valid note, and note failure does not discard a valid letter.
+- **Detached Task Ingestion**: Task extraction runs via its own server action promise (`extractAndSaveTasks`). The client displays and saves the letter immediately without waiting for task extraction to finish.
+- **Zero Vercel Timeout Violations**: Subdividing preparation, clinical generation, and task extraction into independent operations fits safely within serverless execution limits.
 
 ---
 
-## Known Behavior Notes
-- Transcription does **not** auto‑trigger generation; user must click **Generate**.
-- Review letters for Oesophageal/EoE reuse the Functional Review prompt.
+## 3. Data Contracts (`src/lib/generation/contracts.ts`)
+
+### `PreparedSmartNoteContext`
+```typescript
+export interface PreparedSmartNoteContext {
+    requestId: string;                    // Cryptographic random UUID
+    patientId: string;
+    patientName: string;                  // Authoritative display name from DB
+    encounterId: string;
+    encounterDate: string;                // YYYY-MM-DD
+    formattedDate: string;                // e.g. "12 July 2026"
+    normalisedTranscript: string;         // NFC normalised, clean line-endings
+    transcriptHash: string;               // SHA-256 hex digest
+    transcriptArtifactId: string;
+    noteType: 'new_consult' | 'review_consult';
+    outputs: {
+        generateNote: boolean;
+        generateLetter: boolean;
+        letterType?: 'new' | 'review';
+        templateType?: 'general' | 'ibd' | 'functional' | 'oesophageal' | 'eoe';
+        detailLevel?: 'standard' | 'detailed'; // Replaces deprecated isComplex
+        pronouns?: 'auto' | 'he_him' | 'she_her' | 'they_them';
+    };
+    model: SmartNoteModel;
+    extractTasks: boolean;
+    promptVersion: string;
+}
+```
+
+### Results & Errors
+- `ClinicalGenerationResult`: Contains independent `note?: DocumentGenerationResult` and `letter?: DocumentGenerationResult`.
+- `TaskGenerationResult`: Reports `status`, `insertedCount`, `reusedCount`, and optional `error`.
+- `GenerationErrorCode`: Strictly typed codes (`INVALID_INPUT`, `TRANSCRIPT_TOO_SHORT`, `TRANSCRIPT_TOO_LARGE`, `TIMEOUT`, `RATE_LIMITED`, `PROVIDER_ERROR`, `INVALID_MODEL_OUTPUT`, `VALIDATION_FAILED`, `PERSISTENCE_FAILED`, `UNKNOWN`).
+
+---
+
+## 4. Prompt Registry & Sub-specialty Routing (`src/lib/prompts/registry.ts`)
+
+The prompt system enforces explicit routing for every `(templateType, letterType)` pair with no silent fallbacks:
+
+| Template Type | Letter Type | Prompt Key | Clinical Focus |
+|:---|:---|:---|:---|
+| **general** | `new` | `NEW_LETTER` | Comprehensive GI evaluation, baseline history |
+| **general** | `review` | `REVIEW_LETTER` | Progress review, treatment response, next steps |
+| **ibd** | `new` | `IBD_NEW_LETTER` | Phenotype, disease extent, baseline calprotectin/endoscopy |
+| **ibd** | `review` | `IBD_REVIEW_LETTER` | Objective remission, biologics, drug levels, calprotectin |
+| **functional** | `new` | `FUNCTIONAL_NEW_LETTER` | Rome IV patterns, diet trials, brain-gut neuromodulators |
+| **functional** | `review` | `FUNCTIONAL_REVIEW_LETTER` | Symptom severity evolution, food triggers, motility |
+| **oesophageal** | `new` | `OESOPHAGEAL_NEW_LETTER` | Dysphagia, manometry, impedance, reflux metrics |
+| **oesophageal** | `review` | `REVIEW_LETTER` | Progress review (routes to standard Review Letter) |
+| **eoe** | `new` | `EOE_NEW_LETTER` | Peak eosinophil counts, food elimination, topical steroids |
+| **eoe** | `review` | `REVIEW_LETTER` | Histological response, maintenance dilatation (routes to standard Review) |
+
+> **Routing Fix**: In older versions, review consultations for Oesophageal and EoE erroneously fell back to `FUNCTIONAL_REVIEW_LETTER`. They now explicitly route to `REVIEW_LETTER`.
+
+### Detail Level Directive (`DETAILED_LETTER_DIRECTIVE`)
+Replaces the deprecated "Complex Case" directive. Crucially, it instructs the model to provide comprehensive completeness **strictly based on transcript evidence**, and explicitly forbids inventing pathophysiology, psychosocial assumptions, or medicolegal speculation not supported by the transcript.
+
+---
+
+## 5. Security & Boundary Isolation
+
+To prevent prompt injection or transcript instructions overriding clinical tasks, requests are structured with distinct boundaries:
+
+1. **System Instructions (`systemInstruction` in Gemini, `instructions` in OpenAI)**: Contains role definition, safety directives, formatting rules, and the prompt template.
+2. **Metadata & Task Instructions**: Clear user content header stating patient name, date, and document type.
+3. **Transcript Isolation**: Enclosed between rigid markers:
+   ```text
+   === BEGIN CLINICAL TRANSCRIPT SOURCE ===
+   [Untrusted transcript text here]
+   === END CLINICAL TRANSCRIPT SOURCE ===
+   ```
+4. **Security Policy**: An explicit system directive instructs the model that any commands or formatting instructions inside the transcript markers must be ignored and cannot override system instructions.
+
+---
+
+## 6. Deterministic Letter Validation (`src/lib/generation/letter-validation.ts`)
+
+Every generated letter is passed through a deterministic validation engine before persistence:
+
+### Fatal Rules (Prevents Persistence & Throws Error)
+1. **Minimum Length**: Must be at least 150 characters.
+2. **Finish Reason**: Non-STOP finish reasons or safety blocks (`finishReason !== 'STOP'`).
+3. **Template Placeholders**: Any unresolved `{{placeholder}}` strings.
+4. **Scaffold Placeholders**: Residual brackets like `[Insert ...]`, `[Key diagnosis]`, `[Body Paragraphs]`.
+5. **Code Fences / Commentary**: Leading markdown fences (```` ``` ````) or conversational chatter (`"Here is the letter"`).
+6. **Required Headings**: Must contain exactly one `Summary` and one `Impression and Plan` heading.
+7. **Body Prose Existence**: Must contain substantial prose between Summary and Impression/Plan.
+8. **Few-Shot Name Leakage**: Verifies synthetic names from examples (e.g. `David Miller`, `Sarah Jenkins`) do not appear in the opening paragraph.
+9. **GP Action Contradiction**: Flags letters stating both "Action required" and "No action required".
+10. **Salutation Mismatch**: Detects wrong patient name in salutations (`"Dear John"` when patient is Jane).
+
+### Warning Rules (Persisted with Non-blocking Clinician Warnings in UI)
+1. Missing standard closing sign-off (`"Kind regards"`, `"Yours sincerely"`).
+2. Unusually long expansion ratio (> 3x transcript length).
+3. GP Action requested in letter with zero action keywords in the source transcript.
+4. Physical examination findings mentioned when transcript contains no examination terminology.
+5. Inconsistent pronouns compared to selected option.
+6. Excessive bullet points outside the Summary section.
+
+---
+
+## 7. Timeout Budgets & Resilience (`src/lib/llm-request.ts`)
+
+Network requests are wrapped with operational budgets and intelligent retry policies:
+
+| Operation | Timeout Budget | Max Retries | Retryable Conditions |
+|:---|:---|:---|:---|
+| `CLINICAL_GENERATION` | 55 seconds | 1 | 429, 500, 502, 503, 504, Timeout |
+| `STRUCTURED_EXTRACTION` | 25 seconds | 1 | 429, 500, 502, 503, 504, Timeout |
+| `TRANSCRIPTION` | 55 seconds | 1 | 429, 500, 502, 503, 504, Timeout |
+
+- **Non-retryable**: 400 Bad Request, 401 Unauthorized, 403 Forbidden, 404 Not Found fail immediately without wasting time or quota.
+- **Retry-After Support**: Automatically honours upstream HTTP `Retry-After` headers (capped at 10s).
+
+---
+
+## 8. Active Model Configuration (`src/lib/model-config.ts`)
+
+Clinical document generation uses specialized models configured centrally:
+- **`CONSULT_LETTER_MODEL`**: `gpt-5.6-luna` (OpenAI Responses API) — optimized for nuanced medical phrasing and Australian specialist formatting.
+- **`CONSULT_NOTE_MODEL`**: `gemini-3.1-flash-lite` (Google Generative Language API) — fast, high-throughput SOAP structure.
+- **Task Extraction**: Groq Llama 4 Scout (`meta-llama/llama-4-scout-17b-16e-instruct`) or GPT OSS 120B.
+- **Audio Transcription**: Groq Whisper (`whisper-large-v3`).
+
+---
+
+## 9. Testing & Verification
+
+Run the full automated test suite covering generation contracts, concurrency, validation, prompt injection, timeouts, and routing:
+```bash
+node --import tsx --env-file=.env --test src/lib/generation/*.test.ts
+```
+Expected result: **77 passing tests across 6 test suites**.

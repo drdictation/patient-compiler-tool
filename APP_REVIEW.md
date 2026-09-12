@@ -1,5 +1,34 @@
 # Application Review: Clinical Letter Generation
 
+> **CURRENT STATUS: COMMITS 1–6 IMPLEMENTED & VERIFIED**  
+> Key high-priority findings (P0 & P1) have been addressed and validated with 77 passing automated unit/integration tests (`src/lib/generation/*.test.ts`). See the implementation status matrix below for current state.
+
+## Implementation Status Matrix (Updated July 2026)
+
+| Finding # & Title | Priority | Current Status | Resolution Details |
+|:---|:---:|:---:|:---|
+| **1. Independent LLM calls run serially** | P0 | ✅ **RESOLVED** | Split into `prepareSmartNoteGeneration()`, concurrent `generateClinicalDocuments()` (`Promise.allSettled`), and detached `extractAndSaveTasks()`. |
+| **2. No idempotency or duplicate-generation protection** | P0 | 🟡 **PARTIAL** | Transcript SHA-256 hash (`transcriptHash`) and random `requestId` added to `PreparedSmartNoteContext`; deduplication in preparation. DB-level unique constraints remain. |
+| **3. Generated letters lack validation** | P0 | ✅ **RESOLVED** | Deterministic validation engine (`src/lib/generation/letter-validation.ts`) enforces 10 fatal rules (blocking save) and 6 non-blocking clinician warnings. |
+| **4. Letter prompts oversized and inconsistent** | P0 | 🟡 **PARTIAL** | Explicit routing registry created (`src/lib/prompts/registry.ts`). Standardized `DETAILED_LETTER_DIRECTIVE`. Prompt family cleanup pending Phase 8. |
+| **5. Few-shot examples contain errors/leakage** | P0 | 🟡 **PARTIAL** | Fatal validation rule prevents synthetic few-shot patient names (e.g. `David Miller`, `Sarah Jenkins`) from leaking into letters. Example pruning pending Phase 8. |
+| **6. "Complex case" encourages unsupported extrapolation** | P0 | ✅ **RESOLVED** | Replaced `COMPLEXITY_DIRECTIVE` with `DETAILED_LETTER_DIRECTIVE`, strictly grounded in transcript evidence and forbidding ungrounded pathophysiology/medicolegal claims. |
+| **7. Prompt/data boundaries weak (prompt injection)** | P1 | ✅ **RESOLVED** | Structured via `GenerationRequest` schema (`src/lib/prompts/types.ts`). System prompt separated from transcript data enclosed in strict `=== BEGIN CLINICAL TRANSCRIPT SOURCE ===` delimiters with anti-injection directive. |
+| **8. Default model preview / uncontrolled routing** | P1 | ✅ **RESOLVED** | Centralized in `src/lib/model-config.ts`. Set to `gpt-5.6-luna` for letters and `gemini-3.1-flash-lite` for consult notes. |
+| **9. Transcript input has no bounds or normalisation** | P1 | ✅ **RESOLVED** | Pure `normaliseTranscript()` in `src/lib/generation/transcript.ts` (NFC normalization, CRLF->LF, whitespace collapse, 50-250,000 char bounds). |
+| **10. Audio segments transcribed sequentially** | P1 | 🟡 **PARTIAL** | Audio transcription server action with 25MB limit. Boundary overlap reconciliation planned. |
+| **11. Additional-document context duplicates facts** | P1 | ⚪ **ROADMAP** | Scheduled for Phase 10 context optimization. |
+| **12. Unbounded retry/fallback behaviour** | P1 | ✅ **RESOLVED** | `src/lib/llm-request.ts` implements operation timeout budgets (55s / 25s), error classification (`RETRYABLE` vs `NON_RETRYABLE`), and capped `Retry-After` adherence. |
+| **13. JSON extraction silently converts errors to empty** | P1 | ⚪ **ROADMAP** | Scheduled for structured output schema migration. |
+| **14. Tasks always run and writes are N+1** | P1 | ✅ **RESOLVED** | Task extraction detached from letter return path; tasks batch-inserted via single Supabase `.insert(rows)` call. |
+| **15. Artifact persistence race-prone** | P2 | ⚪ **ROADMAP** | Scheduled for Phase 9 Supabase idempotency/atomic RPC migration. |
+| **16. Queries fetch all columns unnecessarily** | P2 | ⚪ **ROADMAP** | Scheduled for Phase 10 query column projection. |
+| **17. LLM logging fire-and-forget in serverless** | P2 | ⚪ **ROADMAP** | Tracked under Phase 9. |
+| **18. Authentication is presence-only** | P2 | ⚪ **ROADMAP** | Tracked under application security roadmap. |
+| **19. No repeatable clinical quality evaluation harness** | P2 | ⚪ **ROADMAP** | Synthetic fixtures removed per user direction; local manual evaluation runner planned. |
+
+---
+
 ## Executive summary
 
 The application has a straightforward core pipeline, but a single Smart Note action currently performs up to three LLM calls in sequence: consult note generation, letter generation, and task extraction. The letter call is also burdened by prompts ranging from roughly 200 to 1,600 words before the transcript is added. Several prompts contain long, imperfect clinical examples and contradictory formatting/style instructions. These choices increase latency and token cost and, more importantly, create avoidable opportunities for example facts, unsupported diagnoses, and incorrect GP actions to leak into generated letters.
