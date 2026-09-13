@@ -218,7 +218,7 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
     const [artifactCache, setArtifactCache] = useState<Record<string, PatientArtifactCacheItem>>({});
     const [isPreFetching, setIsPreFetching] = useState(false);
 
-    // Load Today's patient IDs from localStorage on mount
+    // Load Today's patient IDs and cached artifacts from localStorage on mount
     useEffect(() => {
         try {
             const stored = localStorage.getItem('pct_today_patient_ids');
@@ -229,8 +229,15 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                     setViewMode('today');
                 }
             }
+            const storedCache = localStorage.getItem('pct_today_artifact_cache');
+            if (storedCache) {
+                const parsedCache = JSON.parse(storedCache);
+                if (parsedCache && typeof parsedCache === 'object') {
+                    setArtifactCache(parsedCache);
+                }
+            }
         } catch (e) {
-            console.error('Failed to load today patient IDs from localStorage', e);
+            console.error('Failed to load today patient data from localStorage', e);
         }
     }, []);
 
@@ -240,7 +247,15 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
         setIsPreFetching(true);
         getBatchPatientArtifacts(todayPatientIds)
             .then(data => {
-                setArtifactCache(prev => ({ ...prev, ...data }));
+                setArtifactCache(prev => {
+                    const merged = { ...prev, ...data };
+                    try {
+                        localStorage.setItem('pct_today_artifact_cache', JSON.stringify(merged));
+                    } catch (e) {
+                        console.error('Failed to save artifact cache to localStorage', e);
+                    }
+                    return merged;
+                });
             })
             .catch(err => {
                 console.error('Error pre-fetching today patient artifacts:', err);
@@ -254,6 +269,10 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
         setTodayPatientIds(ids);
         try {
             localStorage.setItem('pct_today_patient_ids', JSON.stringify(ids));
+            if (ids.length === 0) {
+                localStorage.removeItem('pct_today_artifact_cache');
+                setArtifactCache({});
+            }
         } catch (e) {
             console.error('Failed to save today patient ids to localStorage', e);
         }
@@ -293,15 +312,23 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
     };
 
     const handleGenerated = (patientId: string, artifacts: { note?: string; letter?: string; summary?: string }) => {
-        setArtifactCache(prev => ({
-            ...prev,
-            [patientId]: {
-                ...prev[patientId],
-                internalNote: artifacts.note ?? prev[patientId]?.internalNote,
-                referrerLetter: artifacts.letter ?? prev[patientId]?.referrerLetter,
-                patientSummary: artifacts.summary ?? prev[patientId]?.patientSummary,
+        setArtifactCache(prev => {
+            const next = {
+                ...prev,
+                [patientId]: {
+                    ...prev[patientId],
+                    internalNote: artifacts.note ?? prev[patientId]?.internalNote,
+                    referrerLetter: artifacts.letter ?? prev[patientId]?.referrerLetter,
+                    patientSummary: artifacts.summary ?? prev[patientId]?.patientSummary,
+                }
+            };
+            try {
+                localStorage.setItem('pct_today_artifact_cache', JSON.stringify(next));
+            } catch (e) {
+                console.error(e);
             }
-        }));
+            return next;
+        });
         router.refresh();
     };
 
@@ -727,6 +754,14 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                                                                     label="Letter"
                                                                     cachedContent={cached?.referrerLetter}
                                                                 />
+                                                                {cached?.patientSummary && (
+                                                                    <QuickCopyButton
+                                                                        patientId={patient.id}
+                                                                        type="PATIENT_SUMMARY"
+                                                                        label="Summary"
+                                                                        cachedContent={cached?.patientSummary}
+                                                                    />
+                                                                )}
                                                             </div>
                                                         )}
                                                     </div>
@@ -965,6 +1000,14 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                                                         label="Letter"
                                                         cachedContent={cached?.referrerLetter}
                                                     />
+                                                    {cached?.patientSummary && (
+                                                        <QuickCopyButton
+                                                            patientId={patient.id}
+                                                            type="PATIENT_SUMMARY"
+                                                            label="Summary"
+                                                            cachedContent={cached?.patientSummary}
+                                                        />
+                                                    )}
                                                 </div>
                                             )}
                                         </div>

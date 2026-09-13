@@ -1513,49 +1513,6 @@ export async function suggestPatientForInboxItem(itemId: string): Promise<{
 /**
  * Fetch the latest version content of a patient's note or letter.
  */
-export async function getLatestPatientArtifact(
-    patientId: string,
-    artifactType: 'INTERNAL_NOTE' | 'REFERRER_LETTER' | 'PATIENT_SUMMARY'
-): Promise<string | null> {
-    try {
-        // 1. Get the latest encounter date for this patient
-        const { data: latestEncounter, error: encError } = await supabase
-            .from('encounter')
-            .select('id')
-            .eq('canonical_patient_id', patientId)
-            .order('encounter_date', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-        if (encError || !latestEncounter) return null;
-
-        // 2. Get the artifact of specified type for this encounter
-        const { data: artifact, error: artError } = await supabase
-            .from('artifact')
-            .select('id, current_version')
-            .eq('encounter_id', latestEncounter.id)
-            .eq('artifact_type', artifactType)
-            .maybeSingle();
-
-        if (artError || !artifact) return null;
-
-        // 3. Get the content of the current version of this artifact
-        const { data: version, error: verError } = await supabase
-            .from('artifact_version')
-            .select('content')
-            .eq('artifact_id', artifact.id)
-            .eq('version_number', artifact.current_version)
-            .maybeSingle();
-
-        if (verError || !version) return null;
-
-        return version.content;
-    } catch (e) {
-        console.error('Failed to get latest patient artifact:', e);
-        return null;
-    }
-}
-
 export interface PatientArtifactCacheItem {
     internalNote?: string | null;
     referrerLetter?: string | null;
@@ -1563,7 +1520,8 @@ export interface PatientArtifactCacheItem {
 }
 
 /**
- * Pre-fetches the latest note, letter, and patient summary for a list of patient IDs in parallel.
+ * Pre-fetches the latest note, letter, and patient summary for a list of patient IDs in 2 batch queries.
+ * Searches across all patient encounters to ensure notes, letters, and summaries are always found.
  * Powers 0ms instant copy-paste for Today's Scope/Consulting List.
  */
 export async function getBatchPatientArtifacts(
@@ -1572,30 +1530,102 @@ export async function getBatchPatientArtifacts(
     const result: Record<string, PatientArtifactCacheItem> = {};
     if (!patientIds || patientIds.length === 0) return result;
 
+    for (const id of patientIds) {
+        result[id] = {};
+    }
+
     try {
-        await Promise.all(
-            patientIds.map(async (pId) => {
-                try {
-                    const [note, letter, summary] = await Promise.all([
-                        getLatestPatientArtifact(pId, 'INTERNAL_NOTE'),
-                        getLatestPatientArtifact(pId, 'REFERRER_LETTER'),
-                        getLatestPatientArtifact(pId, 'PATIENT_SUMMARY')
-                    ]);
-                    result[pId] = {
-                        internalNote: note,
-                        referrerLetter: letter,
-                        patientSummary: summary
-                    };
-                } catch {
-                    result[pId] = {};
-                }
-            })
-        );
+        // Query 1: Get all encounters for all requested patients in one query
+        const { data: encounters, error: encError } = await supabase
+            .from('encounter')
+            .select('id, canonical_patient_id, encounter_date, created_at')
+            .in('canonical_patient_id', patientIds)
+            .order('encounter_date', { ascending: false });
+
+        if (encError || !encounters || encounters.length === 0) {
+            return result;
+        }
+
+        const encounterIds = encounters.map(e => e.id);
+        const encounterMap = new Map(encounters.map(e => [e.id, e]));
+
+        // Query 2: Get all relevant artifacts with their versions in one query
+        const { data: artifacts, error: artError } = await supabase
+            .from('artifact')
+            .select(`
+                id,
+                encounter_id,
+                artifact_type,
+                current_version,
+                created_at,
+                versions:artifact_version(version_number, content)
+            `)
+            .in('encounter_id', encounterIds)
+            .in('artifact_type', ['INTERNAL_NOTE', 'REFERRER_LETTER', 'REFERRAL_LETTER', 'PATIENT_SUMMARY']);
+
+        if (artError || !artifacts || artifacts.length === 0) {
+            return result;
+        }
+
+        // Sort artifacts newest to oldest by encounter_date, then created_at
+        artifacts.sort((a, b) => {
+            const encA = encounterMap.get(a.encounter_id);
+            const encB = encounterMap.get(b.encounter_id);
+            const dateA = encA?.encounter_date || '';
+            const dateB = encB?.encounter_date || '';
+            if (dateA !== dateB) return dateB.localeCompare(dateA);
+            const createA = a.created_at || encA?.created_at || '';
+            const createB = b.created_at || encB?.created_at || '';
+            return createB.localeCompare(createA);
+        });
+
+        // Populate the latest artifact of each type for each patient
+        for (const art of artifacts) {
+            const enc = encounterMap.get(art.encounter_id);
+            if (!enc || !enc.canonical_patient_id) continue;
+
+            const pId = enc.canonical_patient_id;
+            const currentVersion = art.versions?.find((v: any) => v.version_number === art.current_version) || art.versions?.[0];
+            const content = currentVersion?.content || null;
+            if (!content) continue;
+
+            const item = result[pId] || {};
+            result[pId] = item;
+
+            if (art.artifact_type === 'INTERNAL_NOTE') {
+                if (!item.internalNote) item.internalNote = content;
+            } else if (art.artifact_type === 'REFERRER_LETTER' || art.artifact_type === 'REFERRAL_LETTER') {
+                if (!item.referrerLetter) item.referrerLetter = content;
+            } else if (art.artifact_type === 'PATIENT_SUMMARY') {
+                if (!item.patientSummary) item.patientSummary = content;
+            }
+        }
     } catch (e) {
         console.error('Failed to batch fetch patient artifacts:', e);
     }
 
     return result;
+}
+
+/**
+ * Fetch the latest version content of a patient's note, letter, or patient summary.
+ */
+export async function getLatestPatientArtifact(
+    patientId: string,
+    artifactType: 'INTERNAL_NOTE' | 'REFERRER_LETTER' | 'PATIENT_SUMMARY'
+): Promise<string | null> {
+    try {
+        const batch = await getBatchPatientArtifacts([patientId]);
+        const item = batch[patientId];
+        if (!item) return null;
+        if (artifactType === 'INTERNAL_NOTE') return item.internalNote || null;
+        if (artifactType === 'REFERRER_LETTER') return item.referrerLetter || null;
+        if (artifactType === 'PATIENT_SUMMARY') return item.patientSummary || null;
+        return null;
+    } catch (e) {
+        console.error('Failed to get latest patient artifact:', e);
+        return null;
+    }
 }
 
 export interface AdditionalDocumentOptions {

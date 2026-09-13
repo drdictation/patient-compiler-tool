@@ -193,24 +193,26 @@ export function TodayListDialog({
                                         <div
                                             key={patient.id}
                                             onClick={() => togglePatient(patient.id)}
-                                            className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors text-xs ${
-                                                isSelected ? 'bg-indigo-50/70 text-indigo-950 font-medium' : 'hover:bg-slate-50 text-slate-800'
+                                            className={`flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-colors text-xs select-none ${
+                                                isSelected ? 'bg-indigo-50/80 text-indigo-950 font-medium' : 'hover:bg-slate-50 text-slate-800'
                                             }`}
                                         >
-                                            <div className="flex items-center gap-2.5">
+                                            <div className="flex items-center gap-2.5 flex-1 min-w-0">
                                                 <Checkbox
+                                                    id={`today-p-${patient.id}`}
                                                     checked={isSelected}
                                                     onCheckedChange={() => togglePatient(patient.id)}
+                                                    onClick={(e) => e.stopPropagation()}
                                                 />
-                                                <span>{patient.display_name}</span>
+                                                <span className="truncate">{patient.display_name}</span>
                                                 {patient.referring_doctor && (
-                                                    <span className="text-[10px] text-slate-400">
+                                                    <span className="text-[10px] text-slate-400 truncate">
                                                         (Ref: {patient.referring_doctor})
                                                     </span>
                                                 )}
                                             </div>
                                             {isSelected && (
-                                                <Check className="h-4 w-4 text-indigo-600" />
+                                                <Check className="h-4 w-4 text-indigo-600 flex-shrink-0" />
                                             )}
                                         </div>
                                     );
