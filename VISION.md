@@ -110,12 +110,14 @@ This tool is designed for a **gastroenterology practice** including:
 2. ✅ **Intervention Timeline** — Log of treatments/diets/procedures with responses
 3. ✅ **Investigations Dashboard** — Tests done, pending, and recall schedule
 
-### Phase 2: Intelligence & Clinical Ingestion ✅ COMPLETE
-4. ✅ **Smart Notes v2** — Decoupled concurrent generation of consult notes and subspecialty referrer letters (`gpt-5.6-luna`, `gemini-3.1-flash-lite`), protected by deterministic clinical validation (10 fatal rules + 6 warnings).
-5. ✅ **Pre-Visit Brief** — On-demand clinical synthesis before outpatient encounters.
-6. ✅ **Endoscopy List Briefing** — Batch multi-patient generator for rapid 15-second procedural briefing cards.
-7. ✅ **Task Extraction & Management** — Groq Llama 4 powered task extraction with cross-patient sidebar and snooze capabilities.
-8. ✅ **Gmail Inbox & Voice Capture** — Ingest forwarded emails and iOS voice memos with AI patient matching.
+### Phase 2: Intelligence, Ingestion & Clinical Workflow ✅ COMPLETE
+4. ✅ **Smart Notes v2** — Decoupled concurrent generation of consult notes, subspecialty referrer letters, and patient summaries (`gpt-5.6-luna`, `gemini-3.1-flash-lite`), protected by deterministic clinical validation (10 fatal rules + 6 warnings).
+5. ✅ **Patient Consultation Summary** — Clear, dignified, practical consultation email sent directly to patients explaining physiological mechanisms and management steps without jargon or cheerleading clichés.
+6. ✅ **0ms Formatted Quick-Copy & Today's List** — Instant 1-click rich HTML clipboard copying directly into clinical software (Genie, Best Practice, MedicalDirector); session-based list curation with appointment pasting.
+7. ✅ **Mobile Consulting Suite** — Touch-optimized bottom sheet with live Web Audio waveform visualizer, Screen Wake Lock, and IndexedDB local phone audio buffering.
+8. ✅ **Pre-Visit Brief & Endoscopy List Briefing** — On-demand pre-visit synthesis and batch 15-second procedural briefing cards.
+9. ✅ **Task Extraction & Management** — Groq Llama 4 powered task extraction with cross-patient sidebar and snooze capabilities.
+10. ✅ **Gmail Inbox & Voice Capture** — Ingest forwarded emails and iOS voice memos with AI patient matching.
 
 ### Phase 3: Polish & Longitudinal Views 🚧 IN PROGRESS
 9. ⬜ **Symptom Tracking View** — Longitudinal visual representation of symptom evolution over encounters.

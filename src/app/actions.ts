@@ -1909,3 +1909,134 @@ export async function generateAdditionalDocument(
         return { success: false, error: err.message || 'Generation failed' };
     }
 }
+
+// ============ REFERRAL INTAKE & PREP PERSISTENCE ============
+
+export interface SaveReferralIntakeInput {
+    patient: {
+        displayName: string;
+        dateOfBirth?: string;
+        gender?: string;
+        referringDoctor?: string;
+        referralDate?: string;
+    };
+    procedure?: string;
+    summaryCard: {
+        indication: string;
+        risksAndContext: string;
+        proceduralActions: string;
+    };
+    rawOcrText: string;
+    encounterDate?: string;
+}
+
+export interface SaveReferralIntakeResult {
+    success: boolean;
+    patientId?: string;
+    displayName?: string;
+    prepNoteContent?: string;
+    error?: string;
+}
+
+/**
+ * Persists parsed referral details: matches or creates canonical_patient,
+ * creates encounter, stores raw OCR as RAW_TRANSCRIPT and the structured 3-point card as INTERNAL_NOTE.
+ */
+export async function saveReferralIntakeResult(
+    input: SaveReferralIntakeInput
+): Promise<SaveReferralIntakeResult> {
+    try {
+        const displayName = (input.patient?.displayName || 'Unknown Patient').trim();
+        const normalizedName = displayName.toLowerCase().replace(/\s+/g, ' ');
+
+        // 1. Check for existing patient
+        let patientId: string | null = null;
+        const { data: existingPatients } = await supabase
+            .from('canonical_patient')
+            .select('id, display_name, date_of_birth, referring_doctor')
+            .eq('normalized_name', normalizedName);
+
+        if (existingPatients && existingPatients.length > 0) {
+            // If DOB is present, try to find an exact match
+            if (input.patient.dateOfBirth) {
+                const dobMatch = existingPatients.find(p => p.date_of_birth === input.patient.dateOfBirth);
+                patientId = dobMatch ? dobMatch.id : existingPatients[0].id;
+            } else {
+                patientId = existingPatients[0].id;
+            }
+
+            // Update patient details if they were empty
+            const updates: Record<string, any> = {};
+            if (!existingPatients[0].date_of_birth && input.patient.dateOfBirth) {
+                updates.date_of_birth = input.patient.dateOfBirth;
+            }
+            if (!existingPatients[0].referring_doctor && input.patient.referringDoctor) {
+                updates.referring_doctor = input.patient.referringDoctor;
+            }
+            if (Object.keys(updates).length > 0) {
+                await supabase.from('canonical_patient').update(updates).eq('id', patientId);
+            }
+        } else {
+            // Create new patient
+            const { data: newPat, error: createError } = await supabase
+                .from('canonical_patient')
+                .insert({
+                    display_name: displayName,
+                    normalized_name: normalizedName,
+                    date_of_birth: input.patient.dateOfBirth || null,
+                    referring_doctor: input.patient.referringDoctor || null,
+                    identity_verified: false
+                })
+                .select('id')
+                .single();
+
+            if (createError || !newPat) {
+                throw new Error(createError?.message || 'Failed to create patient');
+            }
+            patientId = newPat.id;
+        }
+
+        // 2. Ensure encounter
+        const encounterDate = input.encounterDate || getMelbourneDate();
+        const encounterId = await ensureEncounter(patientId, encounterDate);
+
+        // 3. Construct structured Markdown prep note
+        const prepNoteContent = `## ENDOSCOPY PREP & REFERRAL SUMMARY
+**Procedure:** ${input.procedure || 'Endoscopy'}
+**Referring Doctor:** ${input.patient.referringDoctor || 'Unknown'}${input.patient.referralDate ? ` (Date of Referral: ${input.patient.referralDate})` : ''}
+${input.patient.dateOfBirth ? `**DOB:** ${input.patient.dateOfBirth}` : ''}
+
+### 1. Indication & Symptoms
+${input.summaryCard.indication || 'Not specified'}
+
+### 2. Key Risks & Clinical Context
+${input.summaryCard.risksAndContext || 'None identified'}
+
+### 3. Procedural & Biopsy Actions
+${input.summaryCard.proceduralActions || 'Standard protocol'}
+`;
+
+        // 4. Save artifacts
+        if (input.rawOcrText && input.rawOcrText.trim()) {
+            await saveArtifact(encounterId, 'RAW_TRANSCRIPT', input.rawOcrText.trim());
+        }
+        await saveArtifact(encounterId, 'INTERNAL_NOTE', prepNoteContent.trim());
+
+        revalidatePath('/');
+        revalidatePath('/patient/[id]');
+
+        return {
+            success: true,
+            patientId,
+            displayName,
+            prepNoteContent
+        };
+    } catch (err: any) {
+        console.error('Failed to save referral intake result:', err);
+        return {
+            success: false,
+            error: err.message || 'Failed to save referral intake record'
+        };
+    }
+}
+

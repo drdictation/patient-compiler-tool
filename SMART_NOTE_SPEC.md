@@ -1,7 +1,7 @@
 # Smart Note Feature Specification & Architecture
 
 > **STATUS: ✅ PRODUCTION READY & REFACTORED**
-> The Smart Note system has been upgraded from a legacy sequential action into a decoupled, concurrent, resilient, and deterministically validated pipeline covered by an automated test suite (77 passing tests in `src/lib/generation/*.test.ts`).
+> The Smart Note system has been upgraded from a legacy sequential action into a decoupled, concurrent, resilient, and deterministically validated pipeline covered by an automated test suite (78 passing tests in `src/lib/generation/*.test.ts`).
 
 ---
 
@@ -11,7 +11,8 @@ The Smart Note pipeline transforms raw consultation audio or pasted transcript t
 1. **Raw Transcript Artifact** (`RAW_TRANSCRIPT`): Normalised, cryptographically hashed, and persisted as the immutable source of truth.
 2. **Internal Consult Note** (`INTERNAL_NOTE`): Structured clinician-facing note (SOAP/consult format).
 3. **Referrer Letter** (`REFERRER_LETTER`): Specialist letter to the referring general practitioner, tailored by sub-specialty (General, IBD, Functional GI, Oesophageal, EoE) and detail level.
-4. **Actionable Tasks** (`patient_task`): Extracted clinical, administrative, and follow-up tasks with confidence scores and evidence quotes.
+4. **Patient Summary** (`PATIENT_SUMMARY`): Clear, dignified, practical consultation summary email sent directly to the patient, explaining physiological mechanisms and management steps without jargon or condescension.
+5. **Actionable Tasks** (`patient_task`): Extracted clinical, administrative, and follow-up tasks with confidence scores and evidence quotes.
 
 ---
 
@@ -20,53 +21,53 @@ The Smart Note pipeline transforms raw consultation audio or pasted transcript t
 Rather than a single blocking server action, generation is separated into three distinct lifecycles:
 
 ```
-                  ┌──────────────────────────────┐
-                  │   SmartNoteDialog (Client)   │
-                  └──────────────┬───────────────┘
-                                 │
-                 1. Normalise & Prepare Request
-                                 │
-                                 ▼
-              ┌──────────────────────────────────────┐
-              │ prepareSmartNoteGeneration(options)  │
-              │  - Validate input bounds (50-250k)   │
-              │  - Unicode NFC normalisation         │
-              │  - Compute SHA-256 transcriptHash    │
-              │  - Server lookup authoritative name  │
-              │  - Ensure encounter & save transcript│
-              │  - Return PreparedSmartNoteContext   │
-              └──────────────────┬───────────────────┘
-                                 │
-        ┌────────────────────────┴────────────────────────┐
-        │ Starts both operations concurrently             │
-        ▼                                                 ▼
-┌───────────────────────────────────────┐ ┌───────────────────────────────────────┐
-│ generateClinicalDocuments(context)    │ │ extractAndSaveTasks(context)          │
-│                                       │ │                                       │
-│ ┌────────────────┐ ┌────────────────┐ │ │ - Groq Llama 4 / GPT OSS extraction   │
-│ │  Consult Note  │ │    Letter      │ │ │ - Bounded timeout (25s)               │
-│ │  (gemini-3.1-  │ │ (gpt-5.6-luna) │ │ │ - Single-query batch SQL insert       │
-│ │   flash-lite)  │ │                │ │ │ - Non-blocking background promise     │
-│ └───────┬────────┘ └───────┬────────┘ │ │ - UI never blocked by task latency    │
-│         └────────┬─────────┘          │ └───────────────────────────────────────┘
-│                  ▼                    │
-│        Promise.allSettled()           │
-│                  │                    │
-│  Deterministic Validation Check       │
-│  - Fatal rules -> block save & error  │
-│  - Warnings -> persist + UI warning   │
-│                  │                    │
-│  Save to Supabase Artifacts Table     │
-└──────────────────┬────────────────────┘
-                   │
-                   ▼
-         Return Clinical Result
-       (Letter & Note display in UI)
+                  ┌─────────────────────────────────────────┐
+                  │ SmartNoteDialog / MobileConsultSheet UI │
+                  └────────────────────┬────────────────────┘
+                                       │
+                       1. Normalise & Prepare Request
+                                       │
+                                       ▼
+                    ┌──────────────────────────────────────┐
+                    │ prepareSmartNoteGeneration(options)  │
+                    │  - Validate input bounds (50-250k)   │
+                    │  - Unicode NFC normalisation         │
+                    │  - Compute SHA-256 transcriptHash    │
+                    │  - Server lookup authoritative name  │
+                    │  - Ensure encounter & save transcript│
+                    │  - Return PreparedSmartNoteContext   │
+                    └──────────────────┬───────────────────┘
+                                       │
+              ┌────────────────────────┴────────────────────────┐
+              │ Starts both operations concurrently             │
+              ▼                                                 ▼
+┌───────────────────────────────────────────────┐ ┌───────────────────────────────────────┐
+│ generateClinicalDocuments(context)            │ │ extractAndSaveTasks(context)          │
+│                                               │ │                                       │
+│ ┌───────────────┐ ┌───────────────┐ ┌───────┐ │ │ - Groq Llama 4 / GPT OSS extraction   │
+│ │ Consult Note  │ │ Referrer Ltr  │ │Patient│ │ │ - Bounded timeout (25s)               │
+│ │ (gemini-3.1-  │ │ (gpt-5.6-luna)│ │Summary│ │ │ - Single-query batch SQL insert       │
+│ │  flash-lite)  │ │               │ │(gemini│ │ │ - Non-blocking background promise     │
+│ └───────┬───────┘ └───────┬───────┘ └───┬───┘ │ │ - UI never blocked by task latency    │
+│         └─────────────────┼─────────────┘     │ └───────────────────────────────────────┘
+│                           ▼                   │
+│                 Promise.allSettled()          │
+│                           │                   │
+│       Deterministic Validation Check (Letter) │
+│       - Fatal rules -> block save & error     │
+│       - Warnings -> persist + UI warning      │
+│                           │                   │
+│       Save to Supabase Artifacts Table        │
+└───────────────────────────┬───────────────────┘
+                            │
+                            ▼
+                  Return Clinical Result
+         (Note, Letter & Summary display in UI)
 ```
 
 ### Key Architectural Decisions:
-- **No Cascade Failures**: Note generation and letter generation run concurrently using `Promise.allSettled`. Failure in letter generation does not discard a valid note, and note failure does not discard a valid letter.
-- **Detached Task Ingestion**: Task extraction runs via its own server action promise (`extractAndSaveTasks`). The client displays and saves the letter immediately without waiting for task extraction to finish.
+- **No Cascade Failures**: Note generation, letter generation, and patient summary generation run concurrently using `Promise.allSettled`. Failure in letter generation does not discard a valid note or summary, and vice-versa.
+- **Detached Task Ingestion**: Task extraction runs via its own server action promise (`extractAndSaveTasks`). The client displays and saves the clinical documents immediately without waiting for task extraction to finish.
 - **Zero Vercel Timeout Violations**: Subdividing preparation, clinical generation, and task extraction into independent operations fits safely within serverless execution limits.
 
 ---
@@ -89,6 +90,7 @@ export interface PreparedSmartNoteContext {
     outputs: {
         generateNote: boolean;
         generateLetter: boolean;
+        generatePatientSummary?: boolean; // Optional patient summary email
         letterType?: 'new' | 'review';
         templateType?: 'general' | 'ibd' | 'functional' | 'oesophageal' | 'eoe';
         detailLevel?: 'standard' | 'detailed'; // Replaces deprecated isComplex
@@ -101,7 +103,7 @@ export interface PreparedSmartNoteContext {
 ```
 
 ### Results & Errors
-- `ClinicalGenerationResult`: Contains independent `note?: DocumentGenerationResult` and `letter?: DocumentGenerationResult`.
+- `ClinicalGenerationResult`: Contains independent `note?: DocumentGenerationResult`, `letter?: DocumentGenerationResult`, and `patientSummary?: DocumentGenerationResult`.
 - `TaskGenerationResult`: Reports `status`, `insertedCount`, `reusedCount`, and optional `error`.
 - `GenerationErrorCode`: Strictly typed codes (`INVALID_INPUT`, `TRANSCRIPT_TOO_SHORT`, `TRANSCRIPT_TOO_LARGE`, `TIMEOUT`, `RATE_LIMITED`, `PROVIDER_ERROR`, `INVALID_MODEL_OUTPUT`, `VALIDATION_FAILED`, `PERSISTENCE_FAILED`, `UNKNOWN`).
 
@@ -124,26 +126,35 @@ The prompt system enforces explicit routing for every `(templateType, letterType
 | **eoe** | `new` | `EOE_NEW_LETTER` | Peak eosinophil counts, food elimination, topical steroids |
 | **eoe** | `review` | `REVIEW_LETTER` | Histological response, maintenance dilatation (routes to standard Review) |
 
-> **Routing Fix**: In older versions, review consultations for Oesophageal and EoE erroneously fell back to `FUNCTIONAL_REVIEW_LETTER`. They now explicitly route to `REVIEW_LETTER`.
-
 ### Detail Level Directive (`DETAILED_LETTER_DIRECTIVE`)
 Replaces the deprecated "Complex Case" directive. Crucially, it instructs the model to provide comprehensive completeness **strictly based on transcript evidence**, and explicitly forbids inventing pathophysiology, psychosocial assumptions, or medicolegal speculation not supported by the transcript.
 
+### Patient Summary Directives (`src/lib/prompts/patient-summary.ts`)
+- **Tone**: Respectful, articulate, objective, and direct. Strictly forbids patronising cheerleading clichés ("You've got this!", "Be kind to yourself!") or baby-talk metaphors ("tummy troubles", "happy gut").
+- **Clinical Grounding**: Explains 2 to 4 overlapping physiological mechanisms discussed (visceral hypersensitivity, dysmotility, pelvic floor dyssynergia) and management steps (medications with titration, toilet posture & defecation mechanics with footstool instructions, dietary measures, investigations, and red flags).
+- **Generated via**: `PATIENT_SUMMARY_MODEL = 'gemini-3.1-flash-lite'`.
+
 ---
 
-## 5. Security & Boundary Isolation
+## 5. Mobile Ingestion & Device Resilience Suite
 
-To prevent prompt injection or transcript instructions overriding clinical tasks, requests are structured with distinct boundaries:
+To support clinicians recording consultations on mobile phones or iPads, the platform includes dedicated client resilience mechanisms:
 
-1. **System Instructions (`systemInstruction` in Gemini, `instructions` in OpenAI)**: Contains role definition, safety directives, formatting rules, and the prompt template.
-2. **Metadata & Task Instructions**: Clear user content header stating patient name, date, and document type.
-3. **Transcript Isolation**: Enclosed between rigid markers:
-   ```text
-   === BEGIN CLINICAL TRANSCRIPT SOURCE ===
-   [Untrusted transcript text here]
-   === END CLINICAL TRANSCRIPT SOURCE ===
-   ```
-4. **Security Policy**: An explicit system directive instructs the model that any commands or formatting instructions inside the transcript markers must be ignored and cannot override system instructions.
+1. **Mobile Consult Sheet (`src/components/mobile-consult-sheet.tsx`)**:
+   - Touch-optimized bottom sheet for phone consulting.
+   - Real-time Web Audio API visualizer rendering live audio amplitude bars (24 frequency bins via `AnalyserNode`).
+   - Collapsible prior consult notes viewer directly inside the sheet for immediate clinical review during consults.
+   - 1-tap toggles for New/Review, Detailed Letter, and Patient Summary.
+
+2. **Screen Wake Lock API (`src/lib/audio/wake-lock.ts`)**:
+   - Acquires `navigator.wakeLock.request('screen')` during audio recording and document generation.
+   - Prevents smartphones and tablets from dimming or going to standby mid-consultation.
+   - Automatically re-acquires the lock if the user leaves and returns to the browser tab (`visibilitychange` listener).
+
+3. **Local IndexedDB Audio Draft Cache (`src/lib/audio/local-cache.ts`)**:
+   - Streams audio chunks locally into client-side IndexedDB (`pct_audio_cache`).
+   - Audio is strictly buffered on the doctor's phone/browser and **never stored in Supabase**.
+   - Cleared automatically immediately upon successful transcription or cancellation.
 
 ---
 
@@ -193,6 +204,7 @@ Network requests are wrapped with operational budgets and intelligent retry poli
 Clinical document generation uses specialized models configured centrally:
 - **`CONSULT_LETTER_MODEL`**: `gpt-5.6-luna` (OpenAI Responses API) — optimized for nuanced medical phrasing and Australian specialist formatting.
 - **`CONSULT_NOTE_MODEL`**: `gemini-3.1-flash-lite` (Google Generative Language API) — fast, high-throughput SOAP structure.
+- **`PATIENT_SUMMARY_MODEL`**: `gemini-3.1-flash-lite` (Google Generative Language API) — empathetic, articulate, non-patronising patient communication.
 - **Task Extraction**: Groq Llama 4 Scout (`meta-llama/llama-4-scout-17b-16e-instruct`) or GPT OSS 120B.
 - **Audio Transcription**: Groq Whisper (`whisper-large-v3`).
 
@@ -204,4 +216,4 @@ Run the full automated test suite covering generation contracts, concurrency, va
 ```bash
 node --import tsx --env-file=.env --test src/lib/generation/*.test.ts
 ```
-Expected result: **77 passing tests across 6 test suites**.
+Expected result: **78 passing tests across 6 test suites**.

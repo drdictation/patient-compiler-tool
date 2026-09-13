@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
@@ -12,13 +12,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { PatientRowActions } from '@/components/patient-row-actions';
-import { Trash2, Merge, X, Search, Filter, FileText, MessageSquare, Loader2, Check, Mic, ClipboardList, Calendar, Zap, Plus, Sparkles } from 'lucide-react';
+import { Trash2, Merge, X, Search, Filter, FileText, MessageSquare, Loader2, Check, Mic, ClipboardList, Calendar, Zap, Plus, Sparkles, FileScan, ChevronDown, ChevronUp, Activity, ExternalLink } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useDebounce } from 'use-debounce';
 import ReactMarkdown from 'react-markdown';
 import { getLatestPatientArtifact, getBatchPatientArtifacts, PatientArtifactCacheItem } from '@/app/actions';
 import { SmartNoteDialog } from '@/components/smart-note-dialog';
 import { TodayListDialog } from '@/components/today-list-dialog';
+import { ReferralIntakeDialog } from '@/components/referral-intake-dialog';
 
 interface Patient {
     id: string;
@@ -215,6 +216,8 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
     const [todayPatientIds, setTodayPatientIds] = useState<string[]>([]);
     const [viewMode, setViewMode] = useState<'today' | 'all'>('all');
     const [isTodayDialogOpen, setIsTodayDialogOpen] = useState(false);
+    const [isReferralIntakeOpen, setIsReferralIntakeOpen] = useState(false);
+    const [expandedPatientId, setExpandedPatientId] = useState<string | null>(null);
     const [artifactCache, setArtifactCache] = useState<Record<string, PatientArtifactCacheItem>>({});
     const [isPreFetching, setIsPreFetching] = useState(false);
 
@@ -331,6 +334,59 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
         });
         router.refresh();
     };
+
+    const handlePatientPrepped = (patientId: string, displayName: string, prepNote: string) => {
+        // Add to today list if not already present
+        if (!todayPatientIds.includes(patientId)) {
+            const updated = [patientId, ...todayPatientIds];
+            setTodayPatientIds(updated);
+            try {
+                localStorage.setItem('pct_today_patient_ids', JSON.stringify(updated));
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        // Cache the prep note
+        setArtifactCache(prev => {
+            const next = {
+                ...prev,
+                [patientId]: {
+                    ...prev[patientId],
+                    internalNote: prepNote
+                }
+            };
+            try {
+                localStorage.setItem('pct_today_artifact_cache', JSON.stringify(next));
+            } catch (e) {
+                console.error(e);
+            }
+            return next;
+        });
+
+        // Switch to today view and expand newly prepped patient
+        setViewMode('today');
+        setExpandedPatientId(patientId);
+        router.refresh();
+    };
+
+    // Global paste listener on Today's tab
+    useEffect(() => {
+        const handleGlobalPaste = (e: ClipboardEvent) => {
+            if (viewMode !== 'today' || isTodayDialogOpen || isReferralIntakeOpen || !!activeRecordPatient) return;
+            const items = e.clipboardData?.items;
+            if (!items) return;
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].type.startsWith('image/')) {
+                    setIsReferralIntakeOpen(true);
+                    break;
+                }
+            }
+        };
+
+        window.addEventListener('paste', handleGlobalPaste);
+        return () => window.removeEventListener('paste', handleGlobalPaste);
+    }, [viewMode, isTodayDialogOpen, isReferralIntakeOpen, activeRecordPatient]);
 
     // Filter and order patients for display
     const todayPatients = initialPatients.filter(p => todayPatientIds.includes(p.id));
@@ -497,6 +553,15 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                 <div className="flex items-center gap-2">
                     <Button
                         size="sm"
+                        onClick={() => setIsReferralIntakeOpen(true)}
+                        className="h-8 px-3 gap-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white transition-all shadow-2xs rounded-lg"
+                    >
+                        <FileScan className="h-3.5 w-3.5" />
+                        <span>Paste Referral</span>
+                    </Button>
+
+                    <Button
+                        size="sm"
                         variant="outline"
                         onClick={() => setIsTodayDialogOpen(true)}
                         className="h-8 px-3 gap-1.5 text-xs font-semibold border-indigo-200 text-indigo-700 bg-indigo-50/50 hover:bg-indigo-100 hover:text-indigo-800 transition-all shadow-2xs"
@@ -553,16 +618,26 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                     <div className="max-w-md mx-auto space-y-1.5">
                         <h3 className="font-bold text-slate-900 text-base">No patients on Today's List yet</h3>
                         <p className="text-xs text-slate-500 leading-relaxed">
-                            Paste your daily endoscopy list or consulting schedule names, or select patients from the directory. Their past consult notes and letters will be pre-fetched into memory for instant 0ms copy-pasting to your EMR.
+                            Paste a screenshot of a GP referral letter, paste appointment schedule names, or select patients from the directory. Notes are pre-cached for 0ms instant review.
                         </p>
                     </div>
-                    <Button
-                        onClick={() => setIsTodayDialogOpen(true)}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs h-9 px-4 gap-2 shadow-sm rounded-xl"
-                    >
-                        <Sparkles className="h-4 w-4" />
-                        Set Up Today's List
-                    </Button>
+                    <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5">
+                        <Button
+                            onClick={() => setIsReferralIntakeOpen(true)}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs h-9 px-4 gap-2 shadow-sm rounded-xl"
+                        >
+                            <FileScan className="h-4 w-4" />
+                            Paste Referral Screenshot
+                        </Button>
+                        <Button
+                            onClick={() => setIsTodayDialogOpen(true)}
+                            variant="outline"
+                            className="text-indigo-700 border-indigo-200 hover:bg-indigo-50 font-semibold text-xs h-9 px-4 gap-2 shadow-2xs rounded-xl"
+                        >
+                            <ClipboardList className="h-4 w-4" />
+                            Set Up Today's List
+                        </Button>
+                    </div>
                 </div>
             ) : (
                 <>
@@ -693,30 +768,55 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                                     {displayedPatients.map((patient) => {
                                         const isTodayPatient = todayPatientIds.includes(patient.id);
                                         const cached = artifactCache[patient.id];
+                                        const isExpanded = viewMode === 'today' && expandedPatientId === patient.id;
 
                                         return (
-                                            <tr
-                                                key={patient.id}
-                                                className={`group hover:bg-slate-50 transition-colors ${selectedIds.includes(patient.id) ? 'bg-slate-50/50' : ''}`}
-                                            >
-                                                <td className="py-3 px-4">
-                                                    <Checkbox
-                                                        checked={selectedIds.includes(patient.id)}
-                                                        onCheckedChange={() => toggleSelect(patient.id)}
-                                                    />
-                                                </td>
-                                                <td className="py-3 px-4 font-medium text-slate-900 group-hover:text-primary">
-                                                    <div className="flex items-center justify-between gap-4 w-full">
-                                                        <Link href={`/patient/${patient.id}`} className="hover:underline flex flex-col justify-center min-w-0">
-                                                            <span className="font-semibold">{patient.display_name}</span>
-                                                            {patient.referring_doctor && (
-                                                                <span className="text-[10px] text-muted-foreground font-normal">
-                                                                    Ref: {patient.referring_doctor}
-                                                                </span>
+                                            <React.Fragment key={patient.id}>
+                                                <tr
+                                                    className={`group hover:bg-slate-50 transition-colors ${selectedIds.includes(patient.id) ? 'bg-slate-50/50' : ''} ${isExpanded ? 'bg-indigo-50/30' : ''}`}
+                                                >
+                                                    <td className="py-3 px-4">
+                                                        <Checkbox
+                                                            checked={selectedIds.includes(patient.id)}
+                                                            onCheckedChange={() => toggleSelect(patient.id)}
+                                                        />
+                                                    </td>
+                                                    <td className="py-3 px-4 font-medium text-slate-900 group-hover:text-primary">
+                                                        <div className="flex items-center justify-between gap-4 w-full">
+                                                            {viewMode === 'today' ? (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setExpandedPatientId(isExpanded ? null : patient.id)}
+                                                                    className="flex items-center gap-2 text-left hover:text-indigo-600 transition-colors cursor-pointer"
+                                                                >
+                                                                    <div className="flex flex-col justify-center min-w-0">
+                                                                        <div className="flex items-center gap-1.5 font-semibold text-slate-900 hover:text-indigo-600">
+                                                                            <span>{patient.display_name}</span>
+                                                                            {isExpanded ? (
+                                                                                <ChevronUp className="h-3.5 w-3.5 text-indigo-600" />
+                                                                            ) : (
+                                                                                <ChevronDown className="h-3.5 w-3.5 text-slate-400 group-hover:text-indigo-600" />
+                                                                            )}
+                                                                        </div>
+                                                                        {patient.referring_doctor && (
+                                                                            <span className="text-[10px] text-muted-foreground font-normal">
+                                                                                Ref: {patient.referring_doctor}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                </button>
+                                                            ) : (
+                                                                <Link href={`/patient/${patient.id}`} className="hover:underline flex flex-col justify-center min-w-0">
+                                                                    <span className="font-semibold">{patient.display_name}</span>
+                                                                    {patient.referring_doctor && (
+                                                                        <span className="text-[10px] text-muted-foreground font-normal">
+                                                                            Ref: {patient.referring_doctor}
+                                                                        </span>
+                                                                    )}
+                                                                </Link>
                                                             )}
-                                                        </Link>
                                                         
-                                                        {/* In Today's view, copy buttons are permanently visible. In All view, visible on hover. */}
+                                                            {/* In Today's view, copy buttons are permanently visible. In All view, visible on hover. */}
                                                         {viewMode === 'today' ? (
                                                             <div className="flex items-center gap-1.5 flex-shrink-0">
                                                                 <QuickCopyButton
@@ -867,7 +967,68 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                                                         </div>
                                                     </div>
                                                 </td>
-                                            </tr>
+                                                </tr>
+
+                                                {/* Desktop 0ms Instant Preview Accordion Row for Today's List */}
+                                                {isExpanded && (
+                                                    <tr className="bg-indigo-50/40 border-b-2 border-indigo-200">
+                                                        <td colSpan={6} className="py-4 px-6">
+                                                            <div className="bg-white rounded-xl border border-indigo-200 shadow-xs p-4 space-y-3">
+                                                                <div className="flex items-center justify-between border-b pb-2.5">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-100 text-indigo-800">
+                                                                            <Activity className="h-3.5 w-3.5 text-indigo-600" />
+                                                                            Clinical Brief &amp; Prep Summary
+                                                                        </span>
+                                                                        {patient.referring_doctor && (
+                                                                            <span className="text-xs text-slate-500">
+                                                                                Referring GP: {patient.referring_doctor}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <Button
+                                                                            size="sm"
+                                                                            onClick={() => setActiveRecordPatient({ id: patient.id, name: patient.display_name })}
+                                                                            className="h-7 text-xs bg-rose-600 hover:bg-rose-700 text-white font-semibold gap-1.5 px-3 rounded-lg shadow-2xs"
+                                                                        >
+                                                                            <Mic className="h-3.5 w-3.5" />
+                                                                            Record Consult / Scope
+                                                                        </Button>
+                                                                        <Link href={`/patient/${patient.id}`}>
+                                                                            <Button
+                                                                                size="sm"
+                                                                                variant="outline"
+                                                                                className="h-7 text-xs text-slate-700 hover:text-indigo-600 border-slate-300 gap-1.5 px-2.5 rounded-lg"
+                                                                            >
+                                                                                <ExternalLink className="h-3 w-3" />
+                                                                                Full Profile
+                                                                            </Button>
+                                                                        </Link>
+                                                                    </div>
+                                                                </div>
+
+                                                                {cached?.internalNote ? (
+                                                                    <div className="text-xs text-slate-700 space-y-2 whitespace-pre-line leading-relaxed max-h-80 overflow-y-auto pr-2 bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/80 font-mono">
+                                                                        {cached.internalNote}
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="py-6 text-center text-xs text-slate-400">
+                                                                        {isPreFetching ? (
+                                                                            <span className="inline-flex items-center gap-2">
+                                                                                <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
+                                                                                Loading clinical notes into memory...
+                                                                            </span>
+                                                                        ) : (
+                                                                            'No clinical note found yet. Tap "Record" or paste a referral letter.'
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                            </React.Fragment>
                                         );
                                     })}
 
@@ -908,24 +1069,54 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                                                     className="mt-1"
                                                 />
                                                 <div className="flex-1 min-w-0">
-                                                    <Link href={`/patient/${patient.id}`} className="block">
-                                                        <h3 className="font-semibold text-slate-900 truncate">
-                                                            {patient.display_name}
-                                                        </h3>
-                                                        {patient.referring_doctor && (
-                                                            <p className="text-xs text-muted-foreground truncate">
-                                                                Ref: {patient.referring_doctor}
-                                                            </p>
-                                                        )}
-                                                        <div className="flex items-center gap-3 mt-2 text-xs text-slate-500">
-                                                            <span>Seen: {patient.last_seen ? new Date(patient.last_seen).toLocaleDateString() : 'Never'}</span>
-                                                            {patient.next_recall_date && (
-                                                                <span className={new Date(patient.next_recall_date) < new Date() ? "text-red-500 font-medium" : ""}>
-                                                                    Recall: {new Date(patient.next_recall_date).toLocaleDateString()}
-                                                                </span>
+                                                    {viewMode === 'today' ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setExpandedPatientId(expandedPatientId === patient.id ? null : patient.id)}
+                                                            className="block text-left w-full cursor-pointer"
+                                                        >
+                                                            <div className="flex items-center gap-1.5 font-semibold text-slate-900">
+                                                                <h3 className="truncate">{patient.display_name}</h3>
+                                                                {expandedPatientId === patient.id ? (
+                                                                    <ChevronUp className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+                                                                ) : (
+                                                                    <ChevronDown className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                                                                )}
+                                                            </div>
+                                                            {patient.referring_doctor && (
+                                                                <p className="text-xs text-muted-foreground truncate">
+                                                                    Ref: {patient.referring_doctor}
+                                                                </p>
                                                             )}
-                                                        </div>
-                                                    </Link>
+                                                            <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-500">
+                                                                <span>Seen: {patient.last_seen ? new Date(patient.last_seen).toLocaleDateString() : 'Never'}</span>
+                                                                {patient.next_recall_date && (
+                                                                    <span className={new Date(patient.next_recall_date) < new Date() ? "text-red-500 font-medium" : ""}>
+                                                                        Recall: {new Date(patient.next_recall_date).toLocaleDateString()}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </button>
+                                                    ) : (
+                                                        <Link href={`/patient/${patient.id}`} className="block">
+                                                            <h3 className="font-semibold text-slate-900 truncate">
+                                                                {patient.display_name}
+                                                            </h3>
+                                                            {patient.referring_doctor && (
+                                                                <p className="text-xs text-muted-foreground truncate">
+                                                                    Ref: {patient.referring_doctor}
+                                                                </p>
+                                                            )}
+                                                            <div className="flex items-center gap-3 mt-2 text-xs text-slate-500">
+                                                                <span>Seen: {patient.last_seen ? new Date(patient.last_seen).toLocaleDateString() : 'Never'}</span>
+                                                                {patient.next_recall_date && (
+                                                                    <span className={new Date(patient.next_recall_date) < new Date() ? "text-red-500 font-medium" : ""}>
+                                                                        Recall: {new Date(patient.next_recall_date).toLocaleDateString()}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </Link>
+                                                    )}
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-2">
@@ -971,6 +1162,30 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                                                 />
                                             </div>
                                         </div>
+
+                                        {/* Mobile Inline 0ms Preview on Today's List */}
+                                        {viewMode === 'today' && expandedPatientId === patient.id && (
+                                            <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-100 text-indigo-800">
+                                                        <Activity className="h-3 w-3 text-indigo-600" />
+                                                        Clinical Brief &amp; Prep Summary
+                                                    </span>
+                                                    <Link href={`/patient/${patient.id}`} className="text-[11px] text-indigo-600 hover:underline inline-flex items-center gap-1 font-medium">
+                                                        Full Profile <ExternalLink className="h-3 w-3" />
+                                                    </Link>
+                                                </div>
+                                                {cached?.internalNote ? (
+                                                    <div className="text-xs text-slate-700 space-y-1.5 whitespace-pre-line leading-relaxed max-h-60 overflow-y-auto bg-slate-50 p-3 rounded-lg border border-slate-200/80 font-mono text-[11px]">
+                                                        {cached.internalNote}
+                                                    </div>
+                                                ) : (
+                                                    <p className="text-xs text-slate-400 italic py-2 text-center">
+                                                        {isPreFetching ? 'Loading note into memory...' : 'No clinical note found yet.'}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        )}
 
                                         {/* Mobile 1-Tap Record & Quick Actions */}
                                         <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
@@ -1025,6 +1240,16 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                     patientId={activeRecordPatient.id}
                     patientName={activeRecordPatient.name}
                     mode="quick-record"
+                    priorNotes={
+                        artifactCache[activeRecordPatient.id]?.internalNote
+                            ? [{
+                                id: 'prep-brief',
+                                encounterDate: 'Today',
+                                label: 'Prep / Referral Note',
+                                content: artifactCache[activeRecordPatient.id].internalNote!
+                              }]
+                            : []
+                    }
                     open={!!activeRecordPatient}
                     onOpenChange={(isOpen) => {
                         if (!isOpen) setActiveRecordPatient(null);
@@ -1040,6 +1265,13 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                 patients={initialPatients}
                 selectedIds={todayPatientIds}
                 onSaveList={handleSaveTodayList}
+            />
+
+            {/* Referral Screenshot Intake Dialog */}
+            <ReferralIntakeDialog
+                isOpen={isReferralIntakeOpen}
+                onClose={() => setIsReferralIntakeOpen(false)}
+                onPatientPrepped={handlePatientPrepped}
             />
         </div>
     );

@@ -1,6 +1,6 @@
 # Implementation Progress
 
-> **CURRENT STATUS (July 2026)**: Commits 1 through 6 are fully implemented and verified by 77 passing tests in the automated test suite (`node --import tsx --env-file=.env --test src/lib/generation/*.test.ts`). Commit 7 was removed by user direction. Commits 8 through 12 form the remaining engineering roadmap.
+> **CURRENT STATUS (September 2026)**: Commits 1 through 7 are fully implemented and verified by 78 passing tests in the automated test suite (`node --import tsx --env-file=.env --test src/lib/generation/*.test.ts`). Prior synthetic fixture work was removed by user direction. Commits 8 through 12 form the remaining engineering roadmap.
 
 ## Commit Boundaries
 
@@ -87,9 +87,27 @@
 - **Tests Run**: `node --import tsx --env-file=.env --test src/lib/generation/*.test.ts` (77 passing tests)
 - **Unresolved Risks / Follow-up Items**: None.
 
-### 7. Synthetic evaluation fixtures
-- **Status**: Removed by user direction
-- **Reason**: Synthetic consultations and a fixture-based evaluation workflow are out of scope for this application.
+### 7. Patient Summary during consult, 0ms Rich Copy, Today's List & Mobile Consult Suite
+- **Status**: Complete
+- **Date Completed**: 2026-09-13
+- **Commit Hash**: `7d7d75b` .. `HEAD`
+- **Files Changed**:
+  - `src/lib/model-config.ts` (added `PATIENT_SUMMARY_MODEL: 'gemini-3.1-flash-lite'`)
+  - `src/lib/generation/contracts.ts` (added `generatePatientSummary?: boolean` and `patientSummary?: DocumentGenerationResult`)
+  - `src/lib/prompts/patient-summary.ts` (overhauled prompt to dignified, articulate, non-patronising clinical communication standard)
+  - `src/app/actions.ts` (added concurrent patient summary generation to `generateClinicalDocuments`, added `getBatchPatientArtifacts` for 0ms batch pre-fetch, extended `getLatestPatientArtifact` for patient summaries)
+  - `src/components/patient-list.tsx` (added `QuickCopyButton` with 1-click rich HTML `text/html` + `text/plain` clipboard copy; added Today's List filter tab and pre-fetch cache integration)
+  - `src/components/today-list-dialog.tsx` (modal for curating Today's List and pasting appointment schedules)
+  - `src/components/mobile-consult-sheet.tsx` (mobile bottom sheet for recording consults with Web Audio visualizer, prior notes viewer, and 1-tap copy)
+  - `src/components/patient-mobile-view.tsx` (3-tab responsive mobile patient view: Timeline, Clinical, Recalls)
+  - `src/components/mobile-header-actions.tsx` (mobile header with Today's List manager)
+  - `src/lib/audio/local-cache.ts` (local IndexedDB audio draft buffer on phone memory)
+  - `src/lib/audio/wake-lock.ts` (Screen Wake Lock API manager)
+  - `src/lib/generation/concurrency.test.ts` (added concurrent patient summary generation test)
+- **Tests Run**: `node --import tsx --env-file=.env --test src/lib/generation/*.test.ts` (78 passing tests across 6 suites)
+- **Unresolved Risks / Follow-up Items**: None.
+
+*(Note on Spec Phase 7: Synthetic evaluation fixtures were previously removed by user direction as out of scope).*
 
 ### 8. Prompt component refactor and evaluated example cleanup
 - **Status**: Not Started
