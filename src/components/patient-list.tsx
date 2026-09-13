@@ -17,7 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { useDebounce } from 'use-debounce';
 import ReactMarkdown from 'react-markdown';
 import { getLatestPatientArtifact, getBatchPatientArtifacts, PatientArtifactCacheItem } from '@/app/actions';
-import { MobileConsultSheet } from '@/components/mobile-consult-sheet';
+import { SmartNoteDialog } from '@/components/smart-note-dialog';
 import { TodayListDialog } from '@/components/today-list-dialog';
 
 interface Patient {
@@ -1019,15 +1019,16 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                 </>
             )}
 
-            {/* Purpose-Built Mobile Consult Sheet */}
+            {/* Quick Record Dialog */}
             {activeRecordPatient && (
-                <MobileConsultSheet
-                    open={!!activeRecordPatient}
-                    onOpenChange={(open) => {
-                        if (!open) setActiveRecordPatient(null);
-                    }}
+                <SmartNoteDialog
                     patientId={activeRecordPatient.id}
                     patientName={activeRecordPatient.name}
+                    mode="quick-record"
+                    open={!!activeRecordPatient}
+                    onOpenChange={(isOpen) => {
+                        if (!isOpen) setActiveRecordPatient(null);
+                    }}
                     onGenerated={handleGenerated}
                 />
             )}

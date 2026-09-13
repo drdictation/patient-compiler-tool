@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition, useRef, useEffect } from 'react';
+import { useState, useTransition, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -38,6 +38,9 @@ interface SmartNoteDialogProps {
     asMobileButton?: boolean;
     mode?: 'standard' | 'quick-record';
     priorNotes?: Array<{ id: string; encounterDate: string; label: string; content: string }>;
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
+    onGenerated?: (patientId: string, artifacts: { note?: string; letter?: string; summary?: string }) => void;
 }
 
 type InputMode = 'paste' | 'record';
@@ -54,11 +57,29 @@ interface GenerationState {
     tasks: GenerationStatus;
 }
 
-export function SmartNoteDialog({ patientId, patientName, asMobileButton = false, mode = 'standard', priorNotes = [] }: SmartNoteDialogProps) {
+export function SmartNoteDialog({
+    patientId,
+    patientName,
+    asMobileButton = false,
+    mode = 'standard',
+    priorNotes = [],
+    open: controlledOpen,
+    onOpenChange: controlledOnOpenChange,
+    onGenerated
+}: SmartNoteDialogProps) {
     const MAX_CHUNK_MB = 4.5;
     const MAX_TOTAL_MB = 25;
 
-    const [open, setOpen] = useState(false);
+    const isControlled = controlledOpen !== undefined;
+    const [internalOpen, setInternalOpen] = useState(false);
+    const open = isControlled ? controlledOpen : internalOpen;
+
+    const setOpen = useCallback((newOpen: boolean) => {
+        if (!isControlled) {
+            setInternalOpen(newOpen);
+        }
+        controlledOnOpenChange?.(newOpen);
+    }, [isControlled, controlledOnOpenChange]);
     const [, startTransition] = useTransition();
     const [isPreparing, setIsPreparing] = useState(false);
     const [isGeneratingClinical, setIsGeneratingClinical] = useState(false);
@@ -309,6 +330,13 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
         audioSegmentsRef.current = [];
     };
 
+    const handleOpenChange = useCallback((newOpen: boolean) => {
+        setOpen(newOpen);
+        if (!newOpen) {
+            resetState();
+        }
+    }, [setOpen]);
+
     // Auto-start recording for Quick Record mode
     useEffect(() => {
         if (open && mode === 'quick-record') {
@@ -320,7 +348,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
             }, 200);
             return () => clearTimeout(timer);
         }
-    }, [open, mode]);
+    }, [open, mode, patientId]);
 
     const runSmartNoteGeneration = (transcriptText: string) => {
         setGenerationState({
@@ -466,13 +494,20 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
 
                 if (successArtifacts.length > 0) {
                     toast.success(`Created ${successArtifacts.join(' and ')} successfully`);
-                    
+
+                    if (onGenerated) {
+                        onGenerated(patientId, {
+                            note: clinicalResult.note?.status === 'success' ? clinicalResult.note.content : undefined,
+                            letter: clinicalResult.letter?.status === 'success' ? clinicalResult.letter.content : undefined,
+                            summary: clinicalResult.patientSummary?.status === 'success' ? clinicalResult.patientSummary.content : undefined,
+                        });
+                    }
+
                     // Do not block dialog close or router refresh for validation warnings
                     // or the separately-running optional task request.
                     setTimeout(() => {
                         if (isMountedRef.current) {
-                            setOpen(false);
-                            resetState();
+                            handleOpenChange(false);
                         }
                         router.refresh();
                     }, 1500);
@@ -640,10 +675,12 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
     );
 
     return (
-        <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) resetState(); }}>
-            <DialogTrigger asChild>
-                {triggerButton}
-            </DialogTrigger>
+        <Dialog open={open} onOpenChange={handleOpenChange}>
+            {!isControlled && (
+                <DialogTrigger asChild>
+                    {triggerButton}
+                </DialogTrigger>
+            )}
             <DialogContent className="sm:max-w-[95vw] xl:max-w-[1400px] h-[90vh] flex flex-col">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2 justify-between">
@@ -653,7 +690,9 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                                     <div className="relative p-1 bg-red-50 rounded-lg text-red-600">
                                         <Mic className="h-5 w-5 animate-pulse" />
                                     </div>
-                                    <span className="font-semibold text-slate-800">Quick Record: Review Consult</span>
+                                    <span className="font-semibold text-slate-800">
+                                        Quick Record: {noteType === 'new_consult' ? 'New Consult' : 'Review Consult'}
+                                    </span>
                                 </>
                             ) : (
                                 <>
@@ -671,7 +710,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
                     </DialogTitle>
                     <DialogDescription>
                         {mode === 'quick-record'
-                            ? `Recording a review consultation for ${patientName}. The audio will be automatically transcribed and analyzed.`
+                            ? `Recording a ${noteType === 'new_consult' ? 'new' : 'review'} consultation for ${patientName}. The audio will be automatically transcribed and analyzed.`
                             : "Generate structured notes and letters from a transcript using AI."
                         }
                     </DialogDescription>
@@ -1024,7 +1063,7 @@ export function SmartNoteDialog({ patientId, patientName, asMobileButton = false
 
                 <DialogFooter className="mt-4 flex-wrap gap-2 sm:gap-0">
                     <>
-                        <Button variant="outline" onClick={() => setOpen(false)} disabled={isPreparing || isGeneratingClinical}>
+                        <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={isPreparing || isGeneratingClinical}>
                             Cancel
                         </Button>
                         <Button

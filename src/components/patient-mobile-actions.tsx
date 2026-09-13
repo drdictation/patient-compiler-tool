@@ -7,7 +7,6 @@ import { AddNoteDialog } from "@/components/add-note-dialog";
 import { SmartNoteDialog } from "@/components/smart-note-dialog";
 import { GlobalScanButton } from "@/components/global-scan-button";
 import { PatientInfoToggle } from "@/components/patient-info-toggle";
-import { MobileConsultSheet } from "@/components/mobile-consult-sheet";
 import { PatientDetails } from "@/lib/data";
 
 interface PatientMobileActionsProps {
@@ -53,14 +52,17 @@ export function PatientMobileActions({ patientId, patientName, patient, priorNot
                 </div>
             </div>
 
-            {/* Purpose-Built Mobile Consult Sheet */}
-            <MobileConsultSheet
-                open={mobileConsultOpen}
-                onOpenChange={setMobileConsultOpen}
-                patientId={patientId}
-                patientName={patientName}
-                priorNotes={priorNotes}
-            />
+            {/* Quick Record Dialog */}
+            {mobileConsultOpen && (
+                <SmartNoteDialog
+                    open={mobileConsultOpen}
+                    onOpenChange={setMobileConsultOpen}
+                    patientId={patientId}
+                    patientName={patientName}
+                    mode="quick-record"
+                    priorNotes={priorNotes}
+                />
+            )}
         </>
     );
 }
