@@ -45,13 +45,21 @@ export function EditablePatientTitle({ patientId, initialName }: EditablePatient
                 body: JSON.stringify({ displayName: name }),
             });
 
-            if (!res.ok) throw new Error('Failed to update name');
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.error || 'Failed to update name');
+            }
+
+            const data = await res.json().catch(() => ({}));
+            if (data.displayName) {
+                setName(data.displayName);
+            }
 
             toast.success("Patient name updated");
             setIsEditing(false);
             router.refresh();
-        } catch (err) {
-            toast.error("Error updating name");
+        } catch (err: any) {
+            toast.error(err.message || "Error updating name");
             console.error(err);
         } finally {
             setLoading(false);

@@ -4,16 +4,21 @@ import { supabase } from '@/lib/supabase';
 import { revalidatePath } from 'next/cache';
 import { getMelbourneDate } from '@/lib/date-time';
 import { PatientDetails, getPatientDetails } from '@/lib/data';
+import { cleanPatientDisplayName, normalizePatientName } from '@/lib/patient-name';
+
+// Re-export patient name normalization helpers
+export { cleanPatientDisplayName, normalizePatientName };
 
 // ============ CREATE PATIENT ============
 
 export async function createPatient(displayName: string): Promise<{ id: string }> {
-    const normalizedName = displayName.toLowerCase().trim().replace(/\s+/g, ' ');
+    const cleanName = cleanPatientDisplayName(displayName);
+    const normalizedName = normalizePatientName(cleanName);
 
     const { data, error } = await supabase
         .from('canonical_patient')
         .insert({
-            display_name: displayName.trim(),
+            display_name: cleanName,
             normalized_name: normalizedName,
             identity_verified: false
         })
@@ -1912,7 +1917,10 @@ export async function generateAdditionalDocument(
 
 // ============ REFERRAL INTAKE & PREP PERSISTENCE ============
 
+export type ReferralIntakeMode = 'endoscopy' | 'general';
+
 export interface SaveReferralIntakeInput {
+    intakeMode?: ReferralIntakeMode;
     patient: {
         displayName: string;
         dateOfBirth?: string;
@@ -1920,11 +1928,18 @@ export interface SaveReferralIntakeInput {
         referringDoctor?: string;
         referralDate?: string;
     };
-    procedure?: string;
+    procedure?: string; // used in endoscopy mode
+    clinicalFocus?: string; // used in general mode
     summaryCard: {
-        indication: string;
-        risksAndContext: string;
-        proceduralActions: string;
+        // Endoscopy mode fields
+        indication?: string;
+        risksAndContext?: string;
+        proceduralActions?: string;
+        // General consult mode fields
+        reasonForReferral?: string;
+        medicalHistoryAndMeds?: string;
+        investigations?: string;
+        questionsAndPlan?: string;
     };
     rawOcrText: string;
     encounterDate?: string;
@@ -1940,21 +1955,39 @@ export interface SaveReferralIntakeResult {
 
 /**
  * Persists parsed referral details: matches or creates canonical_patient,
- * creates encounter, stores raw OCR as RAW_TRANSCRIPT and the structured 3-point card as INTERNAL_NOTE.
+ * creates encounter, stores raw OCR as RAW_TRANSCRIPT and REFERRAL_LETTER,
+ * and the structured summary card as INTERNAL_NOTE.
  */
 export async function saveReferralIntakeResult(
     input: SaveReferralIntakeInput
 ): Promise<SaveReferralIntakeResult> {
     try {
-        const displayName = (input.patient?.displayName || 'Unknown Patient').trim();
-        const normalizedName = displayName.toLowerCase().replace(/\s+/g, ' ');
+        const displayName = cleanPatientDisplayName(input.patient?.displayName || 'Unknown Patient');
+        const normalizedName = normalizePatientName(displayName);
 
         // 1. Check for existing patient
         let patientId: string | null = null;
-        const { data: existingPatients } = await supabase
+        let { data: existingPatients } = await supabase
             .from('canonical_patient')
-            .select('id, display_name, date_of_birth, referring_doctor')
+            .select('id, display_name, normalized_name, date_of_birth, referring_doctor')
             .eq('normalized_name', normalizedName);
+
+        // If no exact normalized_name match, check if an existing record matches once titles are stripped
+        if (!existingPatients || existingPatients.length === 0) {
+            const { data: candidates } = await supabase
+                .from('canonical_patient')
+                .select('id, display_name, normalized_name, date_of_birth, referring_doctor')
+                .ilike('normalized_name', `%${normalizedName}%`);
+
+            if (candidates && candidates.length > 0) {
+                const titleStrippedMatch = candidates.filter(
+                    p => normalizePatientName(p.normalized_name) === normalizedName
+                );
+                if (titleStrippedMatch.length > 0) {
+                    existingPatients = titleStrippedMatch;
+                }
+            }
+        }
 
         if (existingPatients && existingPatients.length > 0) {
             // If DOB is present, try to find an exact match
@@ -2004,8 +2037,32 @@ export async function saveReferralIntakeResult(
         const encounterDate = input.encounterDate || getMelbourneDate();
         const encounterId = await ensureEncounter(patientId, encounterDate);
 
-        // 3. Construct structured Markdown prep note
-        const prepNoteContent = `## ENDOSCOPY PREP & REFERRAL SUMMARY
+        // 3. Construct structured Markdown note depending on mode
+        const mode = input.intakeMode || 'endoscopy';
+        let prepNoteContent = '';
+
+        if (mode === 'general') {
+            const card = input.summaryCard;
+            prepNoteContent = `## REFERRAL SUMMARY & CLINICAL BRIEF
+**Focus / Reason for Visit:** ${input.clinicalFocus || 'General Gastroenterology Consult'}
+**Referring Doctor:** ${input.patient.referringDoctor || 'Unknown'}${input.patient.referralDate ? ` (Date of Referral: ${input.patient.referralDate})` : ''}
+${input.patient.dateOfBirth ? `**DOB:** ${input.patient.dateOfBirth}` : ''}
+
+### 1. Reason for Referral & Clinical Symptoms
+${card.reasonForReferral || card.indication || 'Not specified'}
+
+### 2. Medical History & Current Medications
+${card.medicalHistoryAndMeds || card.risksAndContext || 'None recorded'}
+
+### 3. Prior Investigations & Findings
+${card.investigations || 'None reported'}
+
+### 4. Key Questions & Plan for Consult
+${card.questionsAndPlan || card.proceduralActions || 'Review clinical history and management plan'}
+`;
+        } else {
+            // Default endoscopy mode
+            prepNoteContent = `## ENDOSCOPY PREP & REFERRAL SUMMARY
 **Procedure:** ${input.procedure || 'Endoscopy'}
 **Referring Doctor:** ${input.patient.referringDoctor || 'Unknown'}${input.patient.referralDate ? ` (Date of Referral: ${input.patient.referralDate})` : ''}
 ${input.patient.dateOfBirth ? `**DOB:** ${input.patient.dateOfBirth}` : ''}
@@ -2019,10 +2076,14 @@ ${input.summaryCard.risksAndContext || 'None identified'}
 ### 3. Procedural & Biopsy Actions
 ${input.summaryCard.proceduralActions || 'Standard protocol'}
 `;
+        }
 
         // 4. Save artifacts
         if (input.rawOcrText && input.rawOcrText.trim()) {
+            // Raw text for immutable audit record
             await saveArtifact(encounterId, 'RAW_TRANSCRIPT', input.rawOcrText.trim());
+            // Full referral letter directly into patient's record
+            await saveArtifact(encounterId, 'REFERRAL_LETTER', input.rawOcrText.trim());
         }
         await saveArtifact(encounterId, 'INTERNAL_NOTE', prepNoteContent.trim());
 

@@ -2,12 +2,13 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { isAuthenticated } from '@/lib/auth';
+import { cleanPatientDisplayName, normalizePatientName } from '@/app/actions';
 
 export async function PATCH(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
-    if (!isAuthenticated()) {
+    if (!(await isAuthenticated())) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -20,14 +21,35 @@ export async function PATCH(
             return NextResponse.json({ error: 'Invalid name' }, { status: 400 });
         }
 
+        const cleanName = cleanPatientDisplayName(displayName);
+        const normalizedName = normalizePatientName(cleanName);
+
+        // Check if ANOTHER patient already exists with this normalized name
+        const { data: conflict } = await supabase
+            .from('canonical_patient')
+            .select('id, display_name')
+            .eq('normalized_name', normalizedName)
+            .neq('id', id)
+            .maybeSingle();
+
+        if (conflict) {
+            return NextResponse.json({
+                error: `A patient named "${conflict.display_name}" already exists. Use the Merge tool on the dashboard to combine their records.`
+            }, { status: 409 });
+        }
+
         const { error } = await supabase
             .from('canonical_patient')
-            .update({ display_name: displayName.trim() })
+            .update({
+                display_name: cleanName,
+                normalized_name: normalizedName,
+                updated_at: new Date().toISOString()
+            })
             .eq('id', id);
 
         if (error) throw error;
 
-        return NextResponse.json({ success: true });
+        return NextResponse.json({ success: true, displayName: cleanName });
     } catch (error: any) {
         console.error('Update error:', error);
         return NextResponse.json({ error: error.message }, { status: 500 });
@@ -38,7 +60,7 @@ export async function DELETE(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
-    if (!isAuthenticated()) {
+    if (!(await isAuthenticated())) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

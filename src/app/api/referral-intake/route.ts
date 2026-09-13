@@ -1,17 +1,18 @@
 import { NextResponse } from 'next/server';
 import { isAuthenticated } from '@/lib/auth';
+import { cleanPatientDisplayName } from '@/app/actions';
 
 export const maxDuration = 60;
 
-const EXTRACTION_SYSTEM_PROMPT = `
+const ENDOSCOPY_PROMPT = `
 You are an expert Australian gastroenterology clinical specialist and medical records analyst.
-Your task is to analyze the provided image of a medical referral letter (typically a GP referral, outpatient scope request, or clinic letter for an endoscopy list).
+Your task is to analyze the provided image of a medical referral letter for an endoscopy list (e.g. GP referral or outpatient scope request).
 
 Extract all clinically relevant details and return strictly valid JSON matching this schema:
 
 {
   "patient": {
-    "displayName": "string (Full patient name, formatted with proper casing e.g. 'John Smith')",
+    "displayName": "string (Full patient name WITHOUT ANY salutations or titles such as Mr, Mrs, Ms, Miss, Dr, Prof. E.g. 'Vanessa Lynn', NOT 'Ms. Vanessa Lynn')",
     "dateOfBirth": "string (DD/MM/YYYY or YYYY-MM-DD format if found, e.g. '14/08/1972', or empty string if not found)",
     "gender": "string (e.g. 'Female', 'Male', or empty string)",
     "referringDoctor": "string (Referring GP/Doctor name with title, e.g. 'Dr. Sarah Jenkins', or 'Unknown')",
@@ -28,7 +29,39 @@ Extract all clinically relevant details and return strictly valid JSON matching 
 
 Guidelines:
 - Ground all facts strictly in what is visible in the letter. Do not invent diagnoses, medications, or lab values.
-- In proceduralActions, provide practical gastroenterology procedural guidance matching the indication (e.g., if iron deficiency anaemia is suspected, prompt D2 biopsies for celiac; if chronic diarrhea, prompt colonic biopsies for microscopic colitis; if family history of CRC, prompt thorough mucosal inspection and adenoma clearance).
+- In proceduralActions, provide practical gastroenterology procedural guidance matching the indication.
+- NEVER include titles (Mr, Ms, Mrs, Dr) in patient.displayName.
+- Maintain professional Australian medical conventions.
+- Return ONLY valid JSON.
+`;
+
+const GENERAL_CONSULT_PROMPT = `
+You are an expert Australian gastroenterology clinical specialist and medical records analyst.
+Your task is to analyze the provided image of a medical referral letter for a general clinical consultation review.
+
+Extract all clinically relevant details and return strictly valid JSON matching this schema:
+
+{
+  "patient": {
+    "displayName": "string (Full patient name WITHOUT ANY salutations or titles such as Mr, Mrs, Ms, Miss, Dr, Prof. E.g. 'Vanessa Lynn', NOT 'Ms. Vanessa Lynn')",
+    "dateOfBirth": "string (DD/MM/YYYY or YYYY-MM-DD format if found, e.g. '14/08/1972', or empty string if not found)",
+    "gender": "string (e.g. 'Female', 'Male', or empty string)",
+    "referringDoctor": "string (Referring GP/Doctor name with title, e.g. 'Dr. Sarah Jenkins', or 'Unknown')",
+    "referralDate": "string (Date of the letter e.g. '10/09/2026', or empty string)"
+  },
+  "clinicalFocus": "string (Primary reason for consult or clinical question, e.g. 'Altered bowel habits & iron deficiency', 'Suspected IBD', 'Reflux & dysphagia')",
+  "summaryCard": {
+    "reasonForReferral": "string (Concise bullet points: main presenting complaint, symptoms, timeline/duration, severity, and reason the GP is referring)",
+    "medicalHistoryAndMeds": "string (Concise bullet points: past medical and surgical history, current regular medications, known allergies / adverse reactions)",
+    "investigations": "string (Concise bullet points: prior pathology results e.g. FBE, iron studies, LFTs, calprotectin, imaging/scans, or prior scope reports mentioned)",
+    "questionsAndPlan": "string (Concise bullet points: specific questions GP wants answered, key differential diagnoses to evaluate, and suggested pre-consult focus)"
+  },
+  "rawOcrText": "string (Complete, verbatim textual transcription of all readable text in the referral letter, preserving medical history, medications, allergies, and investigations for medico-legal auditability)"
+}
+
+Guidelines:
+- Ground all facts strictly in what is visible in the letter. Do not invent diagnoses, medications, or lab values.
+- NEVER include titles (Mr, Ms, Mrs, Dr) in patient.displayName.
 - Maintain professional Australian medical conventions.
 - Return ONLY valid JSON.
 `;
@@ -46,6 +79,7 @@ export async function POST(request: Request) {
 
         let base64Data = '';
         let mimeType = 'image/jpeg';
+        let mode: 'endoscopy' | 'general' = 'endoscopy';
 
         const contentType = request.headers.get('content-type') || '';
 
@@ -55,6 +89,10 @@ export async function POST(request: Request) {
             if (!file) {
                 return NextResponse.json({ error: 'No image file provided' }, { status: 400 });
             }
+            const modeParam = formData.get('mode') as string | null;
+            if (modeParam === 'general' || modeParam === 'endoscopy') {
+                mode = modeParam;
+            }
             const buffer = Buffer.from(await file.arrayBuffer());
             base64Data = buffer.toString('base64');
             mimeType = file.type || 'image/jpeg';
@@ -62,6 +100,9 @@ export async function POST(request: Request) {
             const body = await request.json();
             if (!body.imageBase64) {
                 return NextResponse.json({ error: 'Missing imageBase64 payload' }, { status: 400 });
+            }
+            if (body.mode === 'general' || body.mode === 'endoscopy') {
+                mode = body.mode;
             }
             let rawStr = body.imageBase64;
             if (rawStr.startsWith('data:')) {
@@ -84,6 +125,8 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Empty image data' }, { status: 400 });
         }
 
+        const systemPrompt = mode === 'general' ? GENERAL_CONSULT_PROMPT : ENDOSCOPY_PROMPT;
+
         // Ephemeral in-memory call to Gemini 2.5 Flash
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
@@ -91,7 +134,7 @@ export async function POST(request: Request) {
             contents: [
                 {
                     parts: [
-                        { text: EXTRACTION_SYSTEM_PROMPT },
+                        { text: systemPrompt },
                         {
                             inlineData: {
                                 mimeType: mimeType,
@@ -134,8 +177,14 @@ export async function POST(request: Request) {
             throw new Error('Failed to parse structured clinical data from referral image.');
         }
 
+        // Sanitize patient name on backend
+        if (parsed.patient && parsed.patient.displayName) {
+            parsed.patient.displayName = cleanPatientDisplayName(parsed.patient.displayName);
+        }
+
         return NextResponse.json({
             success: true,
+            mode,
             data: parsed
         });
 
