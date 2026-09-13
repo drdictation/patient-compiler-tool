@@ -1515,7 +1515,7 @@ export async function suggestPatientForInboxItem(itemId: string): Promise<{
  */
 export async function getLatestPatientArtifact(
     patientId: string,
-    artifactType: 'INTERNAL_NOTE' | 'REFERRER_LETTER'
+    artifactType: 'INTERNAL_NOTE' | 'REFERRER_LETTER' | 'PATIENT_SUMMARY'
 ): Promise<string | null> {
     try {
         // 1. Get the latest encounter date for this patient
@@ -1554,6 +1554,48 @@ export async function getLatestPatientArtifact(
         console.error('Failed to get latest patient artifact:', e);
         return null;
     }
+}
+
+export interface PatientArtifactCacheItem {
+    internalNote?: string | null;
+    referrerLetter?: string | null;
+    patientSummary?: string | null;
+}
+
+/**
+ * Pre-fetches the latest note, letter, and patient summary for a list of patient IDs in parallel.
+ * Powers 0ms instant copy-paste for Today's Scope/Consulting List.
+ */
+export async function getBatchPatientArtifacts(
+    patientIds: string[]
+): Promise<Record<string, PatientArtifactCacheItem>> {
+    const result: Record<string, PatientArtifactCacheItem> = {};
+    if (!patientIds || patientIds.length === 0) return result;
+
+    try {
+        await Promise.all(
+            patientIds.map(async (pId) => {
+                try {
+                    const [note, letter, summary] = await Promise.all([
+                        getLatestPatientArtifact(pId, 'INTERNAL_NOTE'),
+                        getLatestPatientArtifact(pId, 'REFERRER_LETTER'),
+                        getLatestPatientArtifact(pId, 'PATIENT_SUMMARY')
+                    ]);
+                    result[pId] = {
+                        internalNote: note,
+                        referrerLetter: letter,
+                        patientSummary: summary
+                    };
+                } catch {
+                    result[pId] = {};
+                }
+            })
+        );
+    } catch (e) {
+        console.error('Failed to batch fetch patient artifacts:', e);
+    }
+
+    return result;
 }
 
 export interface AdditionalDocumentOptions {

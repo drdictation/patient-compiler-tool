@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Mic, Square, Loader2, CheckCircle2, ChevronDown, ChevronUp, FileText, AlertCircle, ShieldCheck } from 'lucide-react';
+import { Mic, Square, Loader2, CheckCircle2, ChevronDown, ChevronUp, FileText, AlertCircle, ShieldCheck, Sparkles, UserCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { getMelbourneDate } from '@/lib/date-time';
@@ -28,6 +28,7 @@ interface MobileConsultSheetProps {
     patientId: string;
     patientName: string;
     priorNotes?: PriorNote[];
+    onGenerated?: (patientId: string, artifacts: { note?: string; letter?: string; summary?: string }) => void;
 }
 
 export function MobileConsultSheet({
@@ -35,12 +36,15 @@ export function MobileConsultSheet({
     onOpenChange,
     patientId,
     patientName,
-    priorNotes = []
+    priorNotes = [],
+    onGenerated
 }: MobileConsultSheetProps) {
     const router = useRouter();
 
     // Consult settings
     const [isNewConsult, setIsNewConsult] = useState(false);
+    const [isComplex, setIsComplex] = useState(false);
+    const [generatePatientSummary, setGeneratePatientSummary] = useState(false);
     const [encounterDate] = useState(getMelbourneDate);
 
     // Audio recording state
@@ -286,9 +290,10 @@ export function MobileConsultSheet({
                 outputs: {
                     generateNote: true,
                     generateLetter: true,
+                    generatePatientSummary,
                     letterType: letterTypeVal,
                     templateType: 'general',
-                    isComplex: false,
+                    isComplex,
                     pronouns: 'auto'
                 },
                 extractTasks: true,
@@ -315,6 +320,13 @@ export function MobileConsultSheet({
             // Successful completion
             // Clear local temporary phone audio cache
             await clearLocalAudioDraft();
+
+            // Pass freshly generated artifacts for instant clipboard cache
+            onGenerated?.(patientId, {
+                note: clinicalResult.note?.content,
+                letter: clinicalResult.letter?.content,
+                summary: clinicalResult.patientSummary?.content
+            });
 
             // Haptic completion vibration (100ms vibrate, 50ms pause, 100ms vibrate)
             if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
@@ -461,6 +473,36 @@ export function MobileConsultSheet({
                                 }`}
                             >
                                 New Consult
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Extended Options: Detailed & Patient Summary */}
+                    {!isProcessing && (
+                        <div className="flex items-center gap-2 w-full max-w-sm">
+                            <button
+                                type="button"
+                                onClick={() => setIsComplex(!isComplex)}
+                                className={`flex-1 py-2 px-3 text-xs font-semibold rounded-xl border transition-all flex items-center justify-center gap-1.5 ${
+                                    isComplex
+                                        ? 'bg-purple-50 border-purple-300 text-purple-700 shadow-xs ring-1 ring-purple-200'
+                                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                }`}
+                            >
+                                <Sparkles className="h-3.5 w-3.5 text-purple-600" />
+                                <span>{isComplex ? 'Detailed (On)' : 'Standard Letter'}</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setGeneratePatientSummary(!generatePatientSummary)}
+                                className={`flex-1 py-2 px-3 text-xs font-semibold rounded-xl border transition-all flex items-center justify-center gap-1.5 ${
+                                    generatePatientSummary
+                                        ? 'bg-emerald-50 border-emerald-300 text-emerald-700 shadow-xs ring-1 ring-emerald-200'
+                                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                }`}
+                            >
+                                <UserCheck className="h-3.5 w-3.5 text-emerald-600" />
+                                <span>{generatePatientSummary ? '+ Summary (On)' : '+ Patient Summary'}</span>
                             </button>
                         </div>
                     )}
