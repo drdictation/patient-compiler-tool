@@ -1996,6 +1996,10 @@ export async function saveReferralIntakeResult(
             patientId = newPat.id;
         }
 
+        if (!patientId) {
+            throw new Error('Failed to resolve or create patient record');
+        }
+
         // 2. Ensure encounter
         const encounterDate = input.encounterDate || getMelbourneDate();
         const encounterId = await ensureEncounter(patientId, encounterDate);
