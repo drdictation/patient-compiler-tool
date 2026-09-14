@@ -12,11 +12,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { PatientRowActions } from '@/components/patient-row-actions';
-import { Trash2, Merge, X, Search, Filter, FileText, MessageSquare, Loader2, Check, Mic, ClipboardList, Calendar, Zap, Plus, Sparkles, FileScan, ChevronDown, ChevronUp, Activity, ExternalLink } from 'lucide-react';
+import { Trash2, Merge, X, Search, Filter, FileText, MessageSquare, Loader2, Check, Mic, ClipboardList, Calendar, Zap, Plus, Sparkles, FileScan, ChevronDown, ChevronUp, Activity, ExternalLink, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useDebounce } from 'use-debounce';
 import ReactMarkdown from 'react-markdown';
-import { getLatestPatientArtifact, getBatchPatientArtifacts, PatientArtifactCacheItem } from '@/app/actions';
+import { getLatestPatientArtifact, getBatchPatientArtifacts, getTodayRoster, saveTodayRoster, PatientArtifactCacheItem } from '@/app/actions';
 import { SmartNoteDialog } from '@/components/smart-note-dialog';
 import { TodayListDialog } from '@/components/today-list-dialog';
 import { ReferralIntakeDialog } from '@/components/referral-intake-dialog';
@@ -221,13 +221,15 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
     const [artifactCache, setArtifactCache] = useState<Record<string, PatientArtifactCacheItem>>({});
     const [isPreFetching, setIsPreFetching] = useState(false);
 
-    // Load Today's patient IDs and cached artifacts from localStorage on mount
+    // Load Today's patient IDs and cached artifacts from localStorage and server roster on mount
     useEffect(() => {
+        let localIds: string[] = [];
         try {
             const stored = localStorage.getItem('pct_today_patient_ids');
             if (stored) {
                 const parsed = JSON.parse(stored);
                 if (Array.isArray(parsed) && parsed.length > 0) {
+                    localIds = parsed;
                     setTodayPatientIds(parsed);
                     setViewMode('today');
                 }
@@ -242,6 +244,24 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
         } catch (e) {
             console.error('Failed to load today patient data from localStorage', e);
         }
+
+        // Cross-device sync: Check server roster for today (e.g. Virtual Server loading MacBook's list)
+        getTodayRoster().then(serverIds => {
+            if (serverIds && serverIds.length > 0) {
+                setTodayPatientIds(serverIds);
+                setViewMode('today');
+                try {
+                    localStorage.setItem('pct_today_patient_ids', JSON.stringify(serverIds));
+                } catch (e) {
+                    console.error(e);
+                }
+            } else if (localIds.length > 0) {
+                // Save existing local roster to server so other devices can pick it up
+                saveTodayRoster(localIds).catch(() => {});
+            }
+        }).catch(err => {
+            console.debug('Could not load roster from server, using local:', err);
+        });
     }, []);
 
     // Batch pre-fetch notes, letters, and summaries for all patients on today's list
@@ -268,6 +288,44 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
             });
     }, [todayPatientIds]);
 
+    const handleManualSync = async () => {
+        setIsPreFetching(true);
+        try {
+            let activeIds = todayPatientIds;
+            try {
+                const serverIds = await getTodayRoster();
+                if (serverIds && serverIds.length > 0) {
+                    activeIds = serverIds;
+                    setTodayPatientIds(serverIds);
+                    localStorage.setItem('pct_today_patient_ids', JSON.stringify(serverIds));
+                }
+            } catch (e) {
+                console.debug('Server roster check failed:', e);
+            }
+
+            if (activeIds.length > 0) {
+                const freshArtifacts = await getBatchPatientArtifacts(activeIds);
+                setArtifactCache(prev => {
+                    const merged = { ...prev, ...freshArtifacts };
+                    try {
+                        localStorage.setItem('pct_today_artifact_cache', JSON.stringify(merged));
+                    } catch (e) {
+                        console.error('Failed to save artifact cache to localStorage', e);
+                    }
+                    return merged;
+                });
+            }
+
+            router.refresh();
+            toast.success("Synced latest notes & letters from server");
+        } catch (err: any) {
+            console.error('Manual sync failed:', err);
+            toast.error("Failed to sync from server");
+        } finally {
+            setIsPreFetching(false);
+        }
+    };
+
     const handleSaveTodayList = (ids: string[]) => {
         setTodayPatientIds(ids);
         try {
@@ -279,6 +337,7 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
         } catch (e) {
             console.error('Failed to save today patient ids to localStorage', e);
         }
+        saveTodayRoster(ids).catch(() => {});
         if (ids.length > 0) {
             setViewMode('today');
         }
@@ -294,6 +353,7 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
         } catch (e) {
             console.error(e);
         }
+        saveTodayRoster(updated).catch(() => {});
         toast.info("Removed from today's list");
     };
 
@@ -311,6 +371,7 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
         } catch (e) {
             console.error(e);
         }
+        saveTodayRoster(updated).catch(() => {});
         toast.success("Added to today's list");
     };
 
@@ -553,6 +614,18 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                 <div className="flex items-center gap-2">
                     <Button
                         size="sm"
+                        variant="outline"
+                        onClick={handleManualSync}
+                        disabled={isPreFetching}
+                        title="Sync latest notes & letters across devices (MacBook & Virtual Server)"
+                        className="h-8 px-2.5 gap-1.5 text-xs font-semibold border-slate-200 text-slate-700 bg-white hover:bg-slate-50 hover:text-indigo-600 transition-all shadow-2xs rounded-lg"
+                    >
+                        <RefreshCw className={`h-3.5 w-3.5 text-slate-500 ${isPreFetching ? 'animate-spin text-indigo-600' : ''}`} />
+                        <span>{isPreFetching ? 'Syncing...' : 'Sync'}</span>
+                    </Button>
+
+                    <Button
+                        size="sm"
                         onClick={() => setIsReferralIntakeOpen(true)}
                         className="h-8 px-3 gap-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white transition-all shadow-2xs rounded-lg"
                     >
@@ -587,16 +660,27 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                         <span className="text-slate-600 hidden sm:inline">
                             {isPreFetching ? (
                                 <span className="inline-flex items-center gap-1.5 text-indigo-700 font-medium">
-                                    <Loader2 className="h-3 w-3 animate-spin text-indigo-600" /> Pre-fetching past notes &amp; letters for instant copying...
+                                    <Loader2 className="h-3 w-3 animate-spin text-indigo-600" /> Syncing latest notes &amp; letters from server...
                                 </span>
                             ) : (
                                 <span className="inline-flex items-center gap-1 text-emerald-700 font-medium">
-                                    <Zap className="h-3 w-3 text-emerald-600 fill-emerald-600" /> Instant 0ms copy ready (pre-cached in local memory)
+                                    <Zap className="h-3 w-3 text-emerald-600 fill-emerald-600" /> Instant 0ms copy ready (synced with server)
                                 </span>
                             )}
                         </span>
                     </div>
                     <div className="flex items-center gap-2">
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={handleManualSync}
+                            disabled={isPreFetching}
+                            className="h-7 text-xs text-indigo-700 hover:bg-indigo-100/70 px-2.5 font-medium rounded-lg gap-1"
+                            title="Sync latest notes & letters across devices"
+                        >
+                            <RefreshCw className={`h-3 w-3 ${isPreFetching ? 'animate-spin' : ''}`} />
+                            <span>Sync</span>
+                        </Button>
                         <Button
                             size="sm"
                             variant="ghost"

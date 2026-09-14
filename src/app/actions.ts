@@ -1525,8 +1525,25 @@ export interface PatientArtifactCacheItem {
 }
 
 /**
- * Pre-fetches the latest note, letter, and patient summary for a list of patient IDs in 2 batch queries.
- * Searches across all patient encounters to ensure notes, letters, and summaries are always found.
+ * Helper to parse encounter date strings safely into numeric timestamps for ordering.
+ */
+function parseEncounterTimestamp(dateStr?: string | null): number {
+    if (!dateStr) return 0;
+    const parsed = Date.parse(dateStr);
+    if (!isNaN(parsed)) return parsed;
+    const parts = dateStr.split('/');
+    if (parts.length === 3) {
+        const d = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10) - 1;
+        const y = parseInt(parts[2], 10);
+        return new Date(y, m, d).getTime();
+    }
+    return 0;
+}
+
+/**
+ * Server action to batch-fetch the latest clinical artifacts (note, letter, summary)
+ * for a list of patients in a single optimized query pair.
  * Powers 0ms instant copy-paste for Today's Scope/Consulting List.
  */
 export async function getBatchPatientArtifacts(
@@ -1554,7 +1571,7 @@ export async function getBatchPatientArtifacts(
         const encounterIds = encounters.map(e => e.id);
         const encounterMap = new Map(encounters.map(e => [e.id, e]));
 
-        // Query 2: Get all relevant artifacts with their versions in one query
+        // Query 2: Get all relevant artifacts with their versions and creation timestamps in one query
         const { data: artifacts, error: artError } = await supabase
             .from('artifact')
             .select(`
@@ -1563,7 +1580,7 @@ export async function getBatchPatientArtifacts(
                 artifact_type,
                 current_version,
                 created_at,
-                versions:artifact_version(version_number, content)
+                versions:artifact_version(version_number, content, created_at)
             `)
             .in('encounter_id', encounterIds)
             .in('artifact_type', ['INTERNAL_NOTE', 'REFERRER_LETTER', 'REFERRAL_LETTER', 'PATIENT_SUMMARY']);
@@ -1572,16 +1589,31 @@ export async function getBatchPatientArtifacts(
             return result;
         }
 
-        // Sort artifacts newest to oldest by encounter_date, then created_at
+        // Sort artifacts newest to oldest:
+        // 1. Encounter date timestamp (descending)
+        // 2. Version created_at timestamp (descending)
+        // 3. Artifact created_at timestamp (descending)
+        // 4. Version number (descending)
         artifacts.sort((a, b) => {
             const encA = encounterMap.get(a.encounter_id);
             const encB = encounterMap.get(b.encounter_id);
-            const dateA = encA?.encounter_date || '';
-            const dateB = encB?.encounter_date || '';
-            if (dateA !== dateB) return dateB.localeCompare(dateA);
-            const createA = a.created_at || encA?.created_at || '';
-            const createB = b.created_at || encB?.created_at || '';
-            return createB.localeCompare(createA);
+            const dateA = parseEncounterTimestamp(encA?.encounter_date);
+            const dateB = parseEncounterTimestamp(encB?.encounter_date);
+            if (dateA !== dateB) return dateB - dateA;
+
+            const vA = a.versions?.find((v: any) => v.version_number === a.current_version) || a.versions?.[0];
+            const vB = b.versions?.find((v: any) => v.version_number === b.current_version) || b.versions?.[0];
+            const timeA = Math.max(
+                vA?.created_at ? new Date(vA.created_at).getTime() : 0,
+                a.created_at ? new Date(a.created_at).getTime() : 0
+            );
+            const timeB = Math.max(
+                vB?.created_at ? new Date(vB.created_at).getTime() : 0,
+                b.created_at ? new Date(b.created_at).getTime() : 0
+            );
+            if (timeA !== timeB) return timeB - timeA;
+
+            return (b.current_version || 0) - (a.current_version || 0);
         });
 
         // Populate the latest artifact of each type for each patient
@@ -1599,7 +1631,10 @@ export async function getBatchPatientArtifacts(
 
             if (art.artifact_type === 'INTERNAL_NOTE') {
                 if (!item.internalNote) item.internalNote = content;
-            } else if (art.artifact_type === 'REFERRER_LETTER' || art.artifact_type === 'REFERRAL_LETTER') {
+            } else if (art.artifact_type === 'REFERRER_LETTER') {
+                if (!item.referrerLetter) item.referrerLetter = content;
+            } else if (art.artifact_type === 'REFERRAL_LETTER') {
+                // Secondary fallback if REFERRER_LETTER was not present
                 if (!item.referrerLetter) item.referrerLetter = content;
             } else if (art.artifact_type === 'PATIENT_SUMMARY') {
                 if (!item.patientSummary) item.patientSummary = content;
@@ -1610,6 +1645,60 @@ export async function getBatchPatientArtifacts(
     }
 
     return result;
+}
+
+/**
+ * Server action to fetch today's roster of patient IDs from Supabase daily_roster.
+ * Gracefully falls back to empty array if table does not exist.
+ */
+export async function getTodayRoster(targetDate?: string): Promise<string[]> {
+    const date = targetDate || getMelbourneDate();
+    try {
+        const { data, error } = await supabase
+            .from('daily_roster')
+            .select('patient_ids')
+            .eq('roster_date', date)
+            .maybeSingle();
+
+        if (error) {
+            return [];
+        }
+        if (data && Array.isArray(data.patient_ids)) {
+            return data.patient_ids as string[];
+        }
+        return [];
+    } catch {
+        return [];
+    }
+}
+
+/**
+ * Server action to save today's roster of patient IDs to Supabase daily_roster.
+ * Enables cross-device sync between MacBook, Virtual Server, and mobile.
+ */
+export async function saveTodayRoster(patientIds: string[], targetDate?: string): Promise<{ success: boolean; error?: string }> {
+    const date = targetDate || getMelbourneDate();
+    try {
+        const { error } = await supabase
+            .from('daily_roster')
+            .upsert(
+                {
+                    roster_date: date,
+                    patient_ids: patientIds,
+                    updated_at: new Date().toISOString()
+                },
+                { onConflict: 'roster_date' }
+            );
+
+        if (error) {
+            return { success: false, error: error.message };
+        }
+
+        revalidatePath('/');
+        return { success: true };
+    } catch (e: any) {
+        return { success: false, error: e.message || 'Failed to save roster' };
+    }
 }
 
 /**
