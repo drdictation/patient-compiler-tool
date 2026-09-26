@@ -61,34 +61,39 @@ export async function getPatientDetails(id: string) {
 }
 
 export async function getPatientTimeline(patientId: string) {
-    // 1. Get all encounters
-    const { data: encounters, error: encError } = await supabase
-        .from('encounter')
-        .select('*')
-        .eq('canonical_patient_id', patientId)
-        .order('encounter_date', { ascending: false });
-
-    if (encError) throw encError;
-    if (!encounters) return [];
-
-    const encounterIds = encounters.map((enc) => enc.id);
-    const encounterDates = encounters.map((enc) => enc.encounter_date);
-
-    // 2. Fetch associated data in batch to avoid N+1 round trips.
-    const [{ data: records }, { data: artifacts }] = await Promise.all([
+    // 1. Fetch encounters and source records concurrently to eliminate waterfall round-trip
+    const [{ data: encounters, error: encError }, { data: records, error: recError }] = await Promise.all([
+        supabase
+            .from('encounter')
+            .select('*')
+            .eq('canonical_patient_id', patientId)
+            .order('encounter_date', { ascending: false }),
         supabase
             .from('source_record_cache')
             .select('*')
             .eq('canonical_patient_id', patientId)
-            .in('consult_date', encounterDates),
-        supabase
-            .from('artifact')
-            .select(`
-                *,
-                versions:artifact_version(*)
-            `)
-            .in('encounter_id', encounterIds)
     ]);
+
+    if (encError) throw encError;
+    if (recError) {
+        console.error('Error fetching source records:', recError);
+    }
+    if (!encounters || encounters.length === 0) return [];
+
+    const encounterIds = encounters.map((enc) => enc.id);
+
+    // 2. Fetch associated artifacts for all encounters
+    const { data: artifacts, error: artError } = await supabase
+        .from('artifact')
+        .select(`
+            *,
+            versions:artifact_version(*)
+        `)
+        .in('encounter_id', encounterIds);
+
+    if (artError) {
+        console.error('Error fetching artifacts:', artError);
+    }
 
     const recordsByDate = (records || []).reduce<Record<string, TimelineSourceRecord[]>>((acc, record) => {
         const key = record.consult_date;

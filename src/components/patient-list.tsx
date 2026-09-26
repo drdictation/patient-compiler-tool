@@ -12,11 +12,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { PatientRowActions } from '@/components/patient-row-actions';
-import { Trash2, Merge, X, Search, Filter, FileText, MessageSquare, Loader2, Check, Mic, ClipboardList, Calendar, Zap, Plus, Sparkles, FileScan, ChevronDown, ChevronUp, Activity, ExternalLink, RefreshCw } from 'lucide-react';
+import { Trash2, Merge, X, Search, Filter, FileText, MessageSquare, Loader2, Check, Mic, ClipboardList, Calendar, Zap, Plus, Sparkles, FileScan, ChevronDown, ChevronUp, Activity, ExternalLink, RefreshCw, Clock } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useDebounce } from 'use-debounce';
 import ReactMarkdown from 'react-markdown';
 import { getLatestPatientArtifact, getBatchPatientArtifacts, getTodayRoster, saveTodayRoster, PatientArtifactCacheItem } from '@/app/actions';
+import { isRosterExpired, formatRosterExpiryRemaining } from '@/lib/date-time';
 import { SmartNoteDialog } from '@/components/smart-note-dialog';
 import { TodayListDialog } from '@/components/today-list-dialog';
 import { ReferralIntakeDialog } from '@/components/referral-intake-dialog';
@@ -212,8 +213,10 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
     // Managing Filters
     const [activeRecordPatient, setActiveRecordPatient] = useState<{ id: string; name: string } | null>(null);
 
-    // Today's List State (Option B: Browser localStorage)
+    // Today's List State (with rolling 18-hour expiration)
     const [todayPatientIds, setTodayPatientIds] = useState<string[]>([]);
+    const [todayListUpdatedAt, setTodayListUpdatedAt] = useState<string | null>(null);
+    const [timeRemainingText, setTimeRemainingText] = useState<string>('');
     const [viewMode, setViewMode] = useState<'today' | 'all'>('all');
     const [isTodayDialogOpen, setIsTodayDialogOpen] = useState(false);
     const [isReferralIntakeOpen, setIsReferralIntakeOpen] = useState(false);
@@ -224,18 +227,30 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
     // Load Today's patient IDs and cached artifacts from localStorage and server roster on mount
     useEffect(() => {
         let localIds: string[] = [];
+        let localUpdatedAt: string | null = null;
         try {
             const stored = localStorage.getItem('pct_today_patient_ids');
+            const storedTime = localStorage.getItem('pct_today_updated_at');
+
             if (stored) {
-                const parsed = JSON.parse(stored);
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                    localIds = parsed;
-                    setTodayPatientIds(parsed);
-                    setViewMode('today');
+                // If stored list is older than 18 hours, immediately purge it
+                if (storedTime && isRosterExpired(storedTime)) {
+                    localStorage.removeItem('pct_today_patient_ids');
+                    localStorage.removeItem('pct_today_updated_at');
+                    localStorage.removeItem('pct_today_artifact_cache');
+                } else {
+                    const parsed = JSON.parse(stored);
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        localIds = parsed;
+                        localUpdatedAt = storedTime || new Date().toISOString();
+                        setTodayPatientIds(parsed);
+                        setTodayListUpdatedAt(localUpdatedAt);
+                        setViewMode('today');
+                    }
                 }
             }
             const storedCache = localStorage.getItem('pct_today_artifact_cache');
-            if (storedCache) {
+            if (storedCache && localIds.length > 0) {
                 const parsedCache = JSON.parse(storedCache);
                 if (parsedCache && typeof parsedCache === 'object') {
                     setArtifactCache(parsedCache);
@@ -245,24 +260,64 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
             console.error('Failed to load today patient data from localStorage', e);
         }
 
-        // Cross-device sync: Check server roster for today (e.g. Virtual Server loading MacBook's list)
-        getTodayRoster().then(serverIds => {
-            if (serverIds && serverIds.length > 0) {
+        // Cross-device sync: Check server roster for active list within 18 hours
+        getTodayRoster().then(serverRoster => {
+            const serverIds = serverRoster.patientIds || [];
+            const serverUpdatedAt = serverRoster.updatedAt;
+
+            if (serverIds.length > 0 && serverUpdatedAt && !isRosterExpired(serverUpdatedAt)) {
                 setTodayPatientIds(serverIds);
+                setTodayListUpdatedAt(serverUpdatedAt);
                 setViewMode('today');
                 try {
                     localStorage.setItem('pct_today_patient_ids', JSON.stringify(serverIds));
+                    localStorage.setItem('pct_today_updated_at', serverUpdatedAt);
                 } catch (e) {
                     console.error(e);
                 }
-            } else if (localIds.length > 0) {
-                // Save existing local roster to server so other devices can pick it up
+            } else if (localIds.length > 0 && localUpdatedAt && !isRosterExpired(localUpdatedAt)) {
+                // Save existing valid local roster to server so other devices can pick it up
                 saveTodayRoster(localIds).catch(() => {});
+            } else if (serverIds.length === 0 && localIds.length === 0) {
+                setTodayPatientIds([]);
+                setTodayListUpdatedAt(null);
             }
         }).catch(err => {
             console.debug('Could not load roster from server, using local:', err);
         });
     }, []);
+
+    // Countdown and automatic expiration check for Today's List (18h limit)
+    useEffect(() => {
+        if (!todayListUpdatedAt || todayPatientIds.length === 0) {
+            setTimeRemainingText('');
+            return;
+        }
+
+        const checkExpiration = () => {
+            if (isRosterExpired(todayListUpdatedAt)) {
+                setTodayPatientIds([]);
+                setTodayListUpdatedAt(null);
+                setTimeRemainingText('');
+                try {
+                    localStorage.removeItem('pct_today_patient_ids');
+                    localStorage.removeItem('pct_today_updated_at');
+                    localStorage.removeItem('pct_today_artifact_cache');
+                    setArtifactCache({});
+                } catch (e) {
+                    console.error(e);
+                }
+                saveTodayRoster([]).catch(() => {});
+                toast.info("Today's list expired (18h limit) and was reset to 0 patients");
+            } else {
+                setTimeRemainingText(formatRosterExpiryRemaining(todayListUpdatedAt));
+            }
+        };
+
+        checkExpiration();
+        const interval = setInterval(checkExpiration, 60000);
+        return () => clearInterval(interval);
+    }, [todayListUpdatedAt, todayPatientIds.length]);
 
     // Batch pre-fetch notes, letters, and summaries for all patients on today's list
     useEffect(() => {
@@ -293,11 +348,22 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
         try {
             let activeIds = todayPatientIds;
             try {
-                const serverIds = await getTodayRoster();
-                if (serverIds && serverIds.length > 0) {
+                const serverRoster = await getTodayRoster();
+                const serverIds = serverRoster.patientIds || [];
+                const serverUpdatedAt = serverRoster.updatedAt;
+
+                if (serverIds.length > 0 && serverUpdatedAt && !isRosterExpired(serverUpdatedAt)) {
                     activeIds = serverIds;
                     setTodayPatientIds(serverIds);
+                    setTodayListUpdatedAt(serverUpdatedAt);
                     localStorage.setItem('pct_today_patient_ids', JSON.stringify(serverIds));
+                    localStorage.setItem('pct_today_updated_at', serverUpdatedAt);
+                } else if (serverIds.length === 0 && todayPatientIds.length > 0) {
+                    setTodayPatientIds([]);
+                    setTodayListUpdatedAt(null);
+                    localStorage.removeItem('pct_today_patient_ids');
+                    localStorage.removeItem('pct_today_updated_at');
+                    activeIds = [];
                 }
             } catch (e) {
                 console.debug('Server roster check failed:', e);
@@ -326,13 +392,39 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
         }
     };
 
-    const handleSaveTodayList = (ids: string[]) => {
-        setTodayPatientIds(ids);
-        try {
-            localStorage.setItem('pct_today_patient_ids', JSON.stringify(ids));
-            if (ids.length === 0) {
+    const handleClearTodayList = () => {
+        if (todayPatientIds.length === 0) return;
+        if (window.confirm(`Clear all ${todayPatientIds.length} patient${todayPatientIds.length > 1 ? 's' : ''} from today's list?`)) {
+            setTodayPatientIds([]);
+            setTodayListUpdatedAt(null);
+            setTimeRemainingText('');
+            try {
+                localStorage.removeItem('pct_today_patient_ids');
+                localStorage.removeItem('pct_today_updated_at');
                 localStorage.removeItem('pct_today_artifact_cache');
                 setArtifactCache({});
+            } catch (e) {
+                console.error(e);
+            }
+            saveTodayRoster([]).catch(() => {});
+            toast.success("Today's list cleared");
+        }
+    };
+
+    const handleSaveTodayList = (ids: string[]) => {
+        setTodayPatientIds(ids);
+        const now = new Date().toISOString();
+        const nextUpdatedAt = ids.length > 0 ? now : null;
+        setTodayListUpdatedAt(nextUpdatedAt);
+        try {
+            if (ids.length === 0) {
+                localStorage.removeItem('pct_today_patient_ids');
+                localStorage.removeItem('pct_today_updated_at');
+                localStorage.removeItem('pct_today_artifact_cache');
+                setArtifactCache({});
+            } else {
+                localStorage.setItem('pct_today_patient_ids', JSON.stringify(ids));
+                localStorage.setItem('pct_today_updated_at', now);
             }
         } catch (e) {
             console.error('Failed to save today patient ids to localStorage', e);
@@ -349,7 +441,15 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
         const updated = todayPatientIds.filter(item => item !== id);
         setTodayPatientIds(updated);
         try {
-            localStorage.setItem('pct_today_patient_ids', JSON.stringify(updated));
+            if (updated.length === 0) {
+                localStorage.removeItem('pct_today_patient_ids');
+                localStorage.removeItem('pct_today_updated_at');
+                localStorage.removeItem('pct_today_artifact_cache');
+                setTodayListUpdatedAt(null);
+                setArtifactCache({});
+            } else {
+                localStorage.setItem('pct_today_patient_ids', JSON.stringify(updated));
+            }
         } catch (e) {
             console.error(e);
         }
@@ -365,15 +465,19 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
             return;
         }
         const updated = [...todayPatientIds, id];
+        const now = new Date().toISOString();
         setTodayPatientIds(updated);
+        setTodayListUpdatedAt(now);
         try {
             localStorage.setItem('pct_today_patient_ids', JSON.stringify(updated));
+            localStorage.setItem('pct_today_updated_at', now);
         } catch (e) {
             console.error(e);
         }
         saveTodayRoster(updated).catch(() => {});
         toast.success("Added to today's list");
     };
+
 
     const handleGenerated = (patientId: string, artifacts: { note?: string; letter?: string; summary?: string }) => {
         setArtifactCache(prev => {
@@ -400,12 +504,16 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
         // Add to today list if not already present
         if (!todayPatientIds.includes(patientId)) {
             const updated = [patientId, ...todayPatientIds];
+            const now = new Date().toISOString();
             setTodayPatientIds(updated);
+            setTodayListUpdatedAt(now);
             try {
                 localStorage.setItem('pct_today_patient_ids', JSON.stringify(updated));
+                localStorage.setItem('pct_today_updated_at', now);
             } catch (e) {
                 console.error(e);
             }
+            saveTodayRoster(updated).catch(() => {});
         }
 
         // Cache the prep note
@@ -656,6 +764,15 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                         <span className="font-semibold text-indigo-950">
                             Today's Schedule ({sortedTodayPatients.length} patient{sortedTodayPatients.length !== 1 ? 's' : ''})
                         </span>
+                        {timeRemainingText && (
+                            <span
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-100/80 text-indigo-700 text-[11px] font-medium"
+                                title="List automatically expires 18 hours after creation"
+                            >
+                                <Clock className="h-3 w-3" />
+                                <span>Resets in {timeRemainingText}</span>
+                            </span>
+                        )}
                         <span className="text-indigo-300 hidden sm:inline">•</span>
                         <span className="text-slate-600 hidden sm:inline">
                             {isPreFetching ? (
@@ -669,7 +786,7 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                             )}
                         </span>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 sm:gap-2">
                         <Button
                             size="sm"
                             variant="ghost"
@@ -688,6 +805,16 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
                             className="h-7 text-xs text-indigo-700 hover:bg-indigo-100/70 px-2.5 font-medium rounded-lg"
                         >
                             Edit Schedule
+                        </Button>
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={handleClearTodayList}
+                            className="h-7 text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700 px-2 font-medium rounded-lg gap-1 transition-colors"
+                            title="Clear all patients from today's list"
+                        >
+                            <Trash2 className="h-3 w-3" />
+                            <span>Clear List</span>
                         </Button>
                     </div>
                 </div>

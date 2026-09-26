@@ -60,77 +60,107 @@ export async function syncRecords() {
 
         let maxIdInBatch = lastId;
 
-        // 3. Process each record
-        for (const record of records) {
-            try {
-                // A. Normalize Name & Identity
+        try {
+            // A. Collect unique Canonical Patients for bulk upsert
+            const uniquePatientsMap = new Map<string, {
+                normalized_name: string;
+                display_name: string;
+                external_patient_id?: string | number | null;
+                date_of_birth?: string | null;
+                updated_at: string;
+            }>();
+
+            for (const record of records) {
                 const normalized = normalizeName(record.patient_name);
-                const displayName = record.patient_name || 'Unknown Patient';
-                const consultDate = record.consult_date;
-
-                // B. Upsert Canonical Patient
-                const { data: patientData, error: patientError } = await supabase
-                    .from('canonical_patient')
-                    .upsert(
-                        {
-                            normalized_name: normalized,
-                            display_name: displayName,
-                            external_patient_id: record.patient_id,
-                            date_of_birth: record.date_of_birth,
-                            updated_at: new Date().toISOString()
-                        },
-                        { onConflict: 'normalized_name' }
-                    )
-                    .select('id')
-                    .single();
-
-                if (patientError) throw new Error(`Patient Upsert Error: ${patientError.message}`);
-                const patientId = patientData.id;
-
-                // C. Upsert Encounter
-                if (consultDate) {
-                    const { error: encounterError } = await supabase
-                        .from('encounter')
-                        .upsert(
-                            {
-                                canonical_patient_id: patientId,
-                                encounter_date: consultDate,
-                                updated_at: new Date().toISOString()
-                            },
-                            { onConflict: 'canonical_patient_id, encounter_date' }
-                        );
-
-                    if (encounterError) throw new Error(`Encounter Upsert Error: ${encounterError.message}`);
+                if (!uniquePatientsMap.has(normalized)) {
+                    uniquePatientsMap.set(normalized, {
+                        normalized_name: normalized,
+                        display_name: record.patient_name || 'Unknown Patient',
+                        external_patient_id: record.patient_id,
+                        date_of_birth: record.date_of_birth,
+                        updated_at: new Date().toISOString()
+                    });
                 }
+            }
 
-                // D. Upsert Source Record Cache
-                const { error: cacheError } = await supabase
-                    .from('source_record_cache')
-                    .upsert(
-                        {
-                            heroku_id: record.id,
+            const patientPayloads = Array.from(uniquePatientsMap.values());
+            const { data: upsertedPatients, error: patientError } = await supabase
+                .from('canonical_patient')
+                .upsert(patientPayloads, { onConflict: 'normalized_name' })
+                .select('id, normalized_name');
+
+            if (patientError) throw new Error(`Patient Bulk Upsert Error: ${patientError.message}`);
+
+            const patientIdByNormalized = new Map<string, string>(
+                (upsertedPatients || []).map((p) => [p.normalized_name, p.id])
+            );
+
+            // B. Collect unique Encounters for bulk upsert
+            const uniqueEncountersMap = new Map<string, {
+                canonical_patient_id: string;
+                encounter_date: string;
+                updated_at: string;
+            }>();
+
+            for (const record of records) {
+                const normalized = normalizeName(record.patient_name);
+                const patientId = patientIdByNormalized.get(normalized);
+                if (patientId && record.consult_date) {
+                    const key = `${patientId}|${record.consult_date}`;
+                    if (!uniqueEncountersMap.has(key)) {
+                        uniqueEncountersMap.set(key, {
                             canonical_patient_id: patientId,
-                            patient_name_raw: record.patient_name,
-                            patient_id_raw: record.patient_id,
-                            date_of_birth: record.date_of_birth,
-                            consult_date: record.consult_date,
-                            transcription: record.transcription,
-                            ai_formatted_transcription: record.ai_formatted_transcription,
-                            letter_draft: record.letter_draft,
-                            status: record.status,
-                            created_at_heroku: record.created_at,
-                            synced_at: new Date().toISOString()
-                        },
-                        { onConflict: 'heroku_id' }
+                            encounter_date: record.consult_date,
+                            updated_at: new Date().toISOString()
+                        });
+                    }
+                }
+            }
+
+            if (uniqueEncountersMap.size > 0) {
+                const { error: encounterError } = await supabase
+                    .from('encounter')
+                    .upsert(
+                        Array.from(uniqueEncountersMap.values()),
+                        { onConflict: 'canonical_patient_id, encounter_date' }
                     );
 
-                if (cacheError) throw new Error(`Cache Upsert Error: ${cacheError.message}`);
-
-                maxIdInBatch = Math.max(maxIdInBatch, record.id);
-
-            } catch (err) {
-                console.error(`Failed to process record ${record.id}:`, err);
+                if (encounterError) throw new Error(`Encounter Bulk Upsert Error: ${encounterError.message}`);
             }
+
+            // C. Bulk Upsert Source Record Cache
+            const cachePayloads: any[] = [];
+            for (const record of records) {
+                const normalized = normalizeName(record.patient_name);
+                const patientId = patientIdByNormalized.get(normalized);
+                if (patientId) {
+                    cachePayloads.push({
+                        heroku_id: record.id,
+                        canonical_patient_id: patientId,
+                        patient_name_raw: record.patient_name,
+                        patient_id_raw: record.patient_id,
+                        date_of_birth: record.date_of_birth,
+                        consult_date: record.consult_date,
+                        transcription: record.transcription,
+                        ai_formatted_transcription: record.ai_formatted_transcription,
+                        letter_draft: record.letter_draft,
+                        status: record.status,
+                        created_at_heroku: record.created_at,
+                        synced_at: new Date().toISOString()
+                    });
+                    maxIdInBatch = Math.max(maxIdInBatch, record.id);
+                }
+            }
+
+            if (cachePayloads.length > 0) {
+                const { error: cacheError } = await supabase
+                    .from('source_record_cache')
+                    .upsert(cachePayloads, { onConflict: 'heroku_id' });
+
+                if (cacheError) throw new Error(`Cache Bulk Upsert Error: ${cacheError.message}`);
+            }
+        } catch (err) {
+            console.error(`Failed to process batch at cursor ${lastId}:`, err);
         }
 
         // 4. Update Watermark after each batch (for safety)

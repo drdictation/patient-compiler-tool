@@ -60,7 +60,7 @@ export async function POST(
         // 4. Fetch existing issues as context for the LLM
         const { data: existingIssues } = await supabase
             .from('patient_issue')
-            .select('issue_name, status')
+            .select('id, issue_name, issue_key, status')
             .eq('canonical_patient_id', patientId)
             .neq('lifecycle_state', 'rejected');
 
@@ -97,107 +97,90 @@ export async function POST(
         });
         const extractedIssues = extractionResult.issues;
 
-        // 4. Stores & Deduplication
+        // 4. Stores & Deduplication (Batch Processing)
         let newCount = 0;
         let existingCount = 0;
 
+        const existingKeyToId = new Map<string, string>();
+        existingIssues?.forEach(i => {
+            const key = i.issue_key || normalizeIssueKey(i.issue_name);
+            existingKeyToId.set(key, i.id);
+        });
+
+        const newIssuesToInsert: any[] = [];
+        const issueMap = new Map<string, { issue: typeof extractedIssues[0]; id?: string }>();
+
         for (const issue of extractedIssues) {
             const key = normalizeIssueKey(issue.issue_name);
-
-            // A. Insert/Get Patient Issue
-            // We use ON CONFLICT to just get ID if exists. 
-            // BUT we only update if it's new? 
-            // No, if it exists, we stick to existing status unless we want to "re-propose"?
-            // Decision: If it exists, we DO NOT override status. We only ensure the issue exists.
-
-            // First, try to find it
-            const { data: existingIssue } = await supabase
-                .from('patient_issue')
-                .select('id')
-                .eq('canonical_patient_id', patientId)
-                .eq('issue_key', key)
-                .single();
-
-            let issueId = existingIssue?.id;
-
-            if (!issueId) {
-                // Create new Suggested Issue
-                const { data: newIssue, error: insertError } = await supabase
-                    .from('patient_issue')
-                    .insert({
-                        canonical_patient_id: patientId,
-                        issue_name: issue.issue_name,
-                        issue_key: key,
-                        status: issue.status, // Default from LLM, often 'active'
-                        lifecycle_state: 'suggested', // Important: Always suggested first
-                        evidence_quote: issue.evidence_quote
-                    })
-                    .select('id')
-                    .single();
-
-                if (insertError) {
-                    console.error('Issue insert error', insertError);
-                    continue;
-                }
-                issueId = newIssue.id;
-                newCount++;
-            } else {
+            if (existingKeyToId.has(key)) {
                 existingCount++;
+                issueMap.set(key, { issue, id: existingKeyToId.get(key) });
+            } else if (!issueMap.has(key)) {
+                newIssuesToInsert.push({
+                    canonical_patient_id: patientId,
+                    issue_name: issue.issue_name,
+                    issue_key: key,
+                    status: issue.status,
+                    lifecycle_state: 'suggested',
+                    evidence_quote: issue.evidence_quote,
+                });
+                issueMap.set(key, { issue });
             }
+        }
 
-            // B. Link Sources
-            // The LLM gave us a quote, but didn't strictly say WHICH encounter it came from.
-            // This is a limitation of batch processing. 
-            // We can try to simple-match the quote to the records to find the ID.
+        if (newIssuesToInsert.length > 0) {
+            const { data: inserted, error: insertError } = await supabase
+                .from('patient_issue')
+                .insert(newIssuesToInsert)
+                .select('id, issue_key');
 
-            // Heuristic: Find first record containing the quote (or part of it)
-            if (issue.evidence_quote && issueId) {
-                const quoteSnippet = issue.evidence_quote.substring(0, 20); // First 20 chars
+            if (insertError) {
+                console.error('Batch issue insert error', insertError);
+            } else if (inserted) {
+                newCount = inserted.length;
+                for (const ins of inserted) {
+                    const entry = issueMap.get(ins.issue_key);
+                    if (entry) entry.id = ins.id;
+                }
+            }
+        }
+
+        // Link Sources in batch
+        const { data: encounters } = await supabase
+            .from('encounter')
+            .select('id, encounter_date')
+            .eq('canonical_patient_id', patientId);
+
+        const encounterDateMap = new Map((encounters || []).map(e => [e.encounter_date, e.id]));
+        const sourcesToUpsert: any[] = [];
+
+        for (const entry of issueMap.values()) {
+            const issueId = entry.id;
+            if (entry.issue.evidence_quote && issueId) {
+                const quoteSnippet = entry.issue.evidence_quote.substring(0, 20);
                 const matchedRecord = records.find(r => {
                     const content = r.ai_formatted_transcription || r.letter_draft || r.transcription || '';
                     return content.includes(quoteSnippet);
                 });
 
                 if (matchedRecord) {
-                    const { error: linkError } = await supabase
-                        .from('patient_issue_source')
-                        .upsert({
-                            patient_issue_id: issueId,
-                            encounter_id: null, // We might not have encounter_id linked in source_record_cache easily yet? 
-                            // Wait, schema says source_record_cache has canonical_patient_id but encounter table also exists.
-                            // In sync.ts, we upsert source_record_cache separately from encounter.
-                            // However, we can link to source_record_id directly as per our new schema!
-                            source_record_id: matchedRecord.id
-                            // Note: encounter_id in the join table might be tricky if we don't have it handy.
-                            // Let's rely on source_record_id for now as the primary link.
-                            // But schema requires encounter_id as part of PK? 
-                            // "PRIMARY KEY (patient_issue_id, encounter_id)" -> Wait, I defined it like that?
-                            // Let me check my migration file.
-                            // "encounter_id UUID REFERENCES encounter(id)"
-                            // If I don't have encounter_id easily, I might struggle.
-                            // Let's check sync.ts:
-                            // We do upsert encounter. Can we map source_record to encounter?
-                            // They are linked by date and patient.
-                        });
-
-                    // Let's simply fix the schema/logic: ideally link to source_record_id is enough for precision?
-                    // But for the Timeline UI, linking to encounter is useful.
-                    // For now, I will try to fetch the encounter ID based on date.
-                    const { data: enc } = await supabase
-                        .from('encounter')
-                        .select('id')
-                        .eq('canonical_patient_id', patientId)
-                        .eq('encounter_date', matchedRecord.consult_date)
-                        .single();
-
-                    if (enc) {
-                        await supabase.from('patient_issue_source').upsert({
-                            patient_issue_id: issueId,
-                            encounter_id: enc.id,
-                            source_record_id: matchedRecord.id
-                        });
-                    }
+                    const encId = matchedRecord.consult_date ? encounterDateMap.get(matchedRecord.consult_date) : undefined;
+                    sourcesToUpsert.push({
+                        patient_issue_id: issueId,
+                        encounter_id: encId || null,
+                        source_record_id: matchedRecord.id,
+                    });
                 }
+            }
+        }
+
+        if (sourcesToUpsert.length > 0) {
+            const { error: linkError } = await supabase
+                .from('patient_issue_source')
+                .upsert(sourcesToUpsert);
+
+            if (linkError) {
+                console.error('Batch issue source link error', linkError);
             }
         }
 

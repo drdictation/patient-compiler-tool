@@ -25,7 +25,6 @@ import { Plus, FileText, Mail, Loader2, Scan } from 'lucide-react';
 import { createManualNote } from '@/app/actions';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
-import { createWorker } from 'tesseract.js';
 import { getMelbourneDate } from '@/lib/date-time';
 
 interface AddNoteDialogProps {
@@ -47,6 +46,7 @@ export function AddNoteDialog({ patientId, asMobileButton = false }: AddNoteDial
         setIsOcrPending(true);
         const toastId = toast.loading('Extracting text locally on your Mac...');
         try {
+            const { createWorker } = await import('tesseract.js');
             const worker = await createWorker('eng');
             const ret = await worker.recognize(file);
             const extractedText = ret.data.text;

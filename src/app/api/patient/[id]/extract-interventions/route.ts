@@ -89,47 +89,54 @@ export async function POST(
         });
         const extractedItems = extractionResult.interventions;
 
-        // 7. Store Results
+        // 7. Store Results (Batch Processing)
         let newCount = 0;
         let existingCount = 0;
 
+        const existingSet = new Set<string>();
+        existingInterventions?.forEach(i => {
+            existingSet.add(i.intervention_name.toLowerCase().trim());
+        });
+
+        const newInterventionsToInsert: any[] = [];
+
         for (const item of extractedItems) {
-            // Deduplication: intervention_name (normalized)
             const nameNorm = item.intervention_name.toLowerCase().trim();
 
-            const { data: existing } = await supabase
-                .from('patient_intervention')
-                .select('id')
-                .eq('canonical_patient_id', patientId)
-                .ilike('intervention_name', item.intervention_name)
-                .maybeSingle();
-
-            if (!existing) {
-                // Find source link by date
+            if (existingSet.has(nameNorm)) {
+                existingCount++;
+            } else {
+                existingSet.add(nameNorm); // prevent duplicates within same batch
                 let sourceId = null;
                 if (item.start_date) {
                     const matchedRecord = records.find(r => r.consult_date === item.start_date);
                     if (matchedRecord) sourceId = matchedRecord.id;
                 }
 
-                const { error: insertError } = await supabase
-                    .from('patient_intervention')
-                    .insert({
-                        canonical_patient_id: patientId,
-                        intervention_name: item.intervention_name,
-                        intervention_type: item.intervention_type,
-                        start_date: item.start_date,
-                        end_date: item.end_date,
-                        response: item.response,
-                        response_notes: item.response_notes,
-                        source_record_id: sourceId,
-                        lifecycle_state: 'suggested'
-                    });
+                newInterventionsToInsert.push({
+                    canonical_patient_id: patientId,
+                    intervention_name: item.intervention_name,
+                    intervention_type: item.intervention_type,
+                    start_date: item.start_date,
+                    end_date: item.end_date,
+                    response: item.response,
+                    response_notes: item.response_notes,
+                    source_record_id: sourceId,
+                    lifecycle_state: 'suggested'
+                });
+            }
+        }
 
-                if (!insertError) newCount++;
-                else console.error('Insert intervention error', insertError);
-            } else {
-                existingCount++;
+        if (newInterventionsToInsert.length > 0) {
+            const { data: inserted, error: insertError } = await supabase
+                .from('patient_intervention')
+                .insert(newInterventionsToInsert)
+                .select('id');
+
+            if (insertError) {
+                console.error('Batch insert intervention error', insertError);
+            } else if (inserted) {
+                newCount = inserted.length;
             }
         }
 

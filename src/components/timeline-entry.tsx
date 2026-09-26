@@ -78,8 +78,8 @@ export function TimelineEntry({ encounter, isLast, patientId, patientName, allEn
     const [copiedTranscript, setCopiedTranscript] = useState(false);
     const [isTranscriptExpanded, setIsTranscriptExpanded] = useState(false);
 
-    const noteRef = useRef<HTMLDivElement>(null);
-    const letterRef = useRef<HTMLDivElement>(null);
+    const copyHiddenRef = useRef<HTMLDivElement>(null);
+    const [copyTarget, setCopyTarget] = useState<'note' | 'letter' | null>(null);
 
     const copyRichText = async (element: HTMLDivElement | null, plainTextFallback: string, label: string) => {
         if (element) {
@@ -155,11 +155,18 @@ export function TimelineEntry({ encounter, isLast, patientId, patientName, allEn
         const content = latestNoteVersion?.content || '';
         
         if (content) {
-            const success = await copyRichText(noteRef.current, content, 'Note');
-            if (success) {
-                setCopiedNote(true);
-                setTimeout(() => setCopiedNote(false), 2000);
-            }
+            setCopyTarget('note');
+            setTimeout(async () => {
+                try {
+                    const success = await copyRichText(copyHiddenRef.current, content, 'Note');
+                    if (success) {
+                        setCopiedNote(true);
+                        setTimeout(() => setCopiedNote(false), 2000);
+                    }
+                } finally {
+                    setCopyTarget(null);
+                }
+            }, 50);
         }
     };
 
@@ -170,11 +177,18 @@ export function TimelineEntry({ encounter, isLast, patientId, patientName, allEn
         const content = latestLetterVersion?.content || '';
         
         if (content) {
-            const success = await copyRichText(letterRef.current, content, 'Letter');
-            if (success) {
-                setCopiedLetter(true);
-                setTimeout(() => setCopiedLetter(false), 2000);
-            }
+            setCopyTarget('letter');
+            setTimeout(async () => {
+                try {
+                    const success = await copyRichText(copyHiddenRef.current, content, 'Letter');
+                    if (success) {
+                        setCopiedLetter(true);
+                        setTimeout(() => setCopiedLetter(false), 2000);
+                    }
+                } finally {
+                    setCopyTarget(null);
+                }
+            }, 50);
         }
     };
 
@@ -364,19 +378,16 @@ export function TimelineEntry({ encounter, isLast, patientId, patientName, allEn
                     </CardHeader>
                 </Card>
 
-                {/* Hidden container for copying with rich formatting */}
-                <div style={{ position: 'absolute', left: '-9999px', top: '-9999px', opacity: 0, pointerEvents: 'none' }}>
-                    {hasNotes && (
-                        <div ref={noteRef}>
-                            <ReactMarkdown>{noteContent}</ReactMarkdown>
+                {/* Hidden container for copying with rich formatting (rendered only on demand) */}
+                {copyTarget && (
+                    <div style={{ position: 'absolute', left: '-9999px', top: '-9999px', opacity: 0, pointerEvents: 'none' }}>
+                        <div ref={copyHiddenRef}>
+                            <ReactMarkdown>
+                                {copyTarget === 'note' ? noteContent : letterContent}
+                            </ReactMarkdown>
                         </div>
-                    )}
-                    {hasLetters && (
-                        <div ref={letterRef}>
-                            <ReactMarkdown>{letterContent}</ReactMarkdown>
-                        </div>
-                    )}
-                </div>
+                    </div>
+                )}
             </div>
         );
     }

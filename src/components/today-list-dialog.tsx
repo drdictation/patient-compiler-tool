@@ -126,7 +126,7 @@ export function TodayListDialog({
                         Set Up Today's Scope &amp; Consulting List
                     </DialogTitle>
                     <DialogDescription>
-                        Allocate patients scheduled for today. Their latest notes, letters, and summaries will be pre-fetched for instant 0ms copy-pasting.
+                        Allocate patients scheduled for today or prep the night before. Notes and letters are pre-cached for 0ms copying. Lists automatically reset after 18 hours.
                     </DialogDescription>
                 </DialogHeader>
 

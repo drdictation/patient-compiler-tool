@@ -107,6 +107,24 @@
 - **Tests Run**: `node --import tsx --env-file=.env --test src/lib/generation/*.test.ts` (78 passing tests across 6 suites)
 - **Unresolved Risks / Follow-up Items**: None.
 
+### 7b. Today's List Rolling 18-Hour Expiry & 1-Click Clear Action
+- **Status**: Complete
+- **Date Completed**: 2026-09-27
+- **Commit Hash**: `HEAD`
+- **Architecture & Problem Solved**:
+  - *Zombie List Bug Fix*: Previously, `localStorage` saved `pct_today_patient_ids` indefinitely without any timestamp. On every morning mount, if the server roster for the new date was empty, the client mistakenly re-uploaded yesterday's patient list to today's date in `daily_roster`, causing obsolete lists to persist indefinitely unless deleted patient-by-patient.
+  - *Rolling 18-Hour Expiration (`ROSTER_EXPIRATION_HOURS = 18`)*: Added `isRosterExpired` and `formatRosterExpiryRemaining` in `src/lib/date-time.ts`. Lists created during daytime clinics expire overnight. Lists prepped the evening before (e.g. at 7 PM for next-day colonoscopies) remain active and pre-cached through the entire following day.
+  - *Server-Side Validity Query*: `getTodayRoster()` in `src/app/actions.ts` filters `daily_roster` via `gte('updated_at', cutoffTime)` ordered by `updated_at DESC limit 1` and returns `{ patientIds: string[], updatedAt: string | null }`.
+  - *Client Auto-Purge & Live Ticker*: On mount, expired `localStorage` rosters are purged immediately. A 1-minute ticker checks validity, updates a countdown badge (`Resets in Xh Ym`), and auto-clears to 0 patients if 18 hours elapse while open.
+  - *1-Click Clear List*: Added `handleClearTodayList` directly to the schedule banner with confirmation prompt to wipe local storage, artifact cache, and save `[]` to `daily_roster` in one click.
+- **Files Changed**:
+  - `src/lib/date-time.ts` (added `ROSTER_EXPIRATION_HOURS`, `isRosterExpired`, `formatRosterExpiryRemaining`)
+  - `src/app/actions.ts` (updated `getTodayRoster` to respect 18h cutoff and return `TodayRosterResult`)
+  - `src/components/patient-list.tsx` (added mount expiration purge, live ticker, countdown chip, 1-click `Clear List` button)
+  - `src/components/today-list-dialog.tsx` (updated modal description with 18h auto-reset notice)
+- **Tests Run**: `npx tsc --noEmit` (passing with zero errors)
+- **Unresolved Risks / Follow-up Items**: None.
+
 *(Note on Spec Phase 7: Synthetic evaluation fixtures were previously removed by user direction as out of scope).*
 
 ### 8. Prompt component refactor and evaluated example cleanup

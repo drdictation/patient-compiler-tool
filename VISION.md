@@ -113,7 +113,7 @@ This tool is designed for a **gastroenterology practice** including:
 ### Phase 2: Intelligence, Ingestion & Clinical Workflow ✅ COMPLETE
 4. ✅ **Smart Notes v2** — Decoupled concurrent generation of consult notes, subspecialty referrer letters, and patient summaries (`gpt-5.6-luna`, `gemini-3.1-flash-lite`), protected by deterministic clinical validation (10 fatal rules + 6 warnings).
 5. ✅ **Patient Consultation Summary** — Clear, dignified, practical consultation email sent directly to patients explaining physiological mechanisms and management steps without jargon or cheerleading clichés.
-6. ✅ **0ms Formatted Quick-Copy & Today's List** — Instant 1-click rich HTML clipboard copying directly into clinical software (Genie, Best Practice, MedicalDirector); session-based list curation with appointment pasting.
+6. ✅ **0ms Formatted Quick-Copy & Today's List** — Instant 1-click rich HTML clipboard copying directly into clinical software (Genie, Best Practice, MedicalDirector); session-based list curation with cross-device sync, rolling 18-hour auto-reset (protecting evening prep), and 1-click clear.
 7. ✅ **Mobile Consulting Suite** — Touch-optimized bottom sheet with live Web Audio waveform visualizer, Screen Wake Lock, and IndexedDB local phone audio buffering.
 8. ✅ **Pre-Visit Brief & Endoscopy List Briefing** — On-demand pre-visit synthesis and batch 15-second procedural briefing cards.
 9. ✅ **Task Extraction & Management** — Groq Llama 4 powered task extraction with cross-patient sidebar and snooze capabilities.

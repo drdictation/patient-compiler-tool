@@ -38,7 +38,7 @@
 │  │ High-Performance Clinical UX (src/lib/audio/, src/components/)                   │  │
 │  │ - 0ms Quick-Copy: Batch artifact pre-fetching (getBatchPatientArtifacts)         │  │
 │  │ - Rich HTML Clipboard: 1-click formatted copy (10pt Arial, styled paragraphs)    │  │
-│  │ - Today's List: Browser localStorage session management & appointment pasting    │  │
+│  │ - Today's List: Cross-device sync, rolling 18h auto-reset & 1-click clear        │  │
 │  │ - Mobile Consult Suite: Web Audio visualizer, Screen Wake Lock, IndexedDB buffer │  │
 │  └──────────────────────────────────────────────────────────────────────────────────┘  │
 │                                                                                        │
@@ -94,7 +94,12 @@
 ### 4. 0ms Formatted Quick-Copy & Today's List
 - **0ms Instant Copy**: `getBatchPatientArtifacts` pre-fetches the latest note, letter, and patient summary for all patients in just 2 queries across encounters.
 - **Rich HTML Clipboard**: Generates beautifully styled HTML (`text/html` in 10pt Arial with indented lists, styled paragraphs, and bold headings) alongside plain text (`text/plain`). Doctors can 1-click paste notes or letters directly into clinical software (Genie, Best Practice, MedicalDirector) or email with zero formatting corruption.
-- **Today's List Session Management**: Allows clinicians to filter their workspace to today's consulting or endoscopy list (persisted in browser `localStorage`). Includes a dedicated list manager (`TodayListDialog`) where clinicians can select patients or paste a list of names from an appointment book to auto-match.
+- **Today's List Session Management & Rolling 18h Expiry**: Allows clinicians to filter their workspace to today's consulting or endoscopy list.
+  - **Cross-Device Sync (`daily_roster`)**: Persists active roster to Supabase (`roster_date`, `patient_ids`, `updated_at`) and browser `localStorage` (`pct_today_patient_ids`, `pct_today_updated_at`), enabling seamless syncing between MacBook, Virtual Server, and mobile.
+  - **Rolling 18-Hour Auto-Expiration (`ROSTER_EXPIRATION_HOURS = 18`)**: Lists automatically expire and refresh back to 0 patients after 18 hours. This ensures lists prepared the evening before (e.g. at 7 PM for next-day colonoscopies) remain fully active and pre-cached through the entire following day, while morning clinic lists expire overnight so the next morning starts completely clean.
+  - **Live Expiration Countdown Ticker**: A background interval runs every minute to calculate remaining validity time, rendered as a status badge in the list banner (e.g. `Resets in 14h 25m`). If 18 hours elapse while the app is open, the list automatically clears itself to 0 patients with a notification toast.
+  - **1-Click "Clear List" Action**: Clinicians can wipe the entire list instantly via the "Clear List" banner button with prompt confirmation, which purges local storage, clears the artifact cache, and syncs an empty roster to Supabase without having to remove patients one by one.
+  - **Appointment Matching**: Includes a dedicated list manager (`TodayListDialog`) where clinicians can select patients or paste a list of names from an appointment book to auto-match.
 
 ### 5. Mobile Consulting & Device Resilience Suite
 - **Mobile Consult Bottom Sheet (`MobileConsultSheet`)**: Dedicated touch interface for consulting from a phone or tablet. Includes an audio frequency waveform visualizer (24 frequency bars via Web Audio API `AnalyserNode`), New/Review toggles, Detailed Letter toggle, and Patient Summary inclusion.

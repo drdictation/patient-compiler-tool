@@ -3,25 +3,18 @@ import { getPatientDetails, getPatientTimeline, getPatientIssues, getPatientInve
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, Calendar, ChevronRight } from 'lucide-react';
-import { TimelineEntry } from '@/components/timeline-entry';
+import { ArrowLeft, ChevronRight } from 'lucide-react';
 import { EditablePatientTitle } from '@/components/editable-patient-title';
-import { IssuesPanel } from '@/components/issues-panel';
-import { InvestigationsPanel } from '@/components/investigations-panel';
-import { InterventionsPanel } from '@/components/interventions-panel';
-import { PreVisitBrief } from '@/components/pre-visit-brief';
 import { PatientSidebar } from '@/components/patient-sidebar';
 import { AddNoteDialog } from '@/components/add-note-dialog';
 import { SmartNoteDialog } from '@/components/smart-note-dialog';
 import { GlobalScanButton } from '@/components/global-scan-button';
 import { PatientInfoToggle } from '@/components/patient-info-toggle';
 import { PatientMobileActions } from '@/components/patient-mobile-actions';
-import { TasksPanel } from '@/components/tasks-panel';
 import { GlobalSearch } from '@/components/global-search';
 import { AddPatientDialog } from '@/components/add-patient-dialog';
 import { CreateDocumentDialog } from '@/components/create-document-dialog';
-import { TranscriptsPanel } from '@/components/transcripts-panel';
-import { PatientMobileView } from '@/components/patient-mobile-view';
+import { PatientContentView } from '@/components/patient-content-view';
 import { notFound } from 'next/navigation';
 
 export const dynamic = 'force-dynamic';
@@ -157,8 +150,7 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
 
                 {/* Main Content Area - Add bottom padding on mobile for action bar */}
                 <main className="flex-1 overflow-y-auto print:overflow-visible pb-24 md:pb-0">
-                    {/* Mobile: Purpose-built 3-tab switcher */}
-                    <PatientMobileView
+                    <PatientContentView
                         patient={patient}
                         timeline={timeline}
                         issues={issues}
@@ -166,73 +158,6 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                         interventions={interventions}
                         tasks={tasks}
                     />
-
-                    {/* Desktop: Full vertical panels (100% UNCHANGED) */}
-                    <div className="hidden md:block max-w-5xl mx-auto px-4 lg:px-8 py-8 space-y-8 print:max-w-full print:px-0">
-
-                        {/* TIMELINE — shown first for quick access */}
-                        <section id="timeline" className="space-y-2">
-                            <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2 border-b pb-2 mb-4">
-                                <Calendar className="h-5 w-5 text-indigo-600" />
-                                Encounter Timeline
-                            </h2>
-
-                            {timeline.length === 0 && (
-                                <div className="text-center py-12 text-muted-foreground border-2 border-dashed rounded-lg bg-white">
-                                    No encounters found for this patient.
-                                </div>
-                            )}
-
-                            <div className="pl-1">
-                                {timeline.map((encounter, index) => (
-                                    <TimelineEntry
-                                        key={encounter.id}
-                                        encounter={encounter}
-                                        isLast={index === timeline.length - 1}
-                                        patientId={patient.id}
-                                        patientName={patient.display_name}
-                                        allEncounters={timeline.map(e => ({ id: e.id, encounter_date: e.encounter_date }))}
-                                    />
-                                ))}
-                            </div>
-                        </section>
-
-                        {/* SAVED TRANSCRIPTS */}
-                        <section id="transcripts">
-                            <TranscriptsPanel patientName={patient.display_name} timeline={timeline} />
-                        </section>
-
-                        {/* PRE-VISIT BRIEF */}
-                        <section id="brief">
-                            <PreVisitBrief
-                                patientName={patient.display_name}
-                                patientId={patient.id}
-                                issues={issues}
-                                investigations={investigations}
-                                interventions={interventions}
-                            />
-                        </section>
-
-                        {/* TASKS PANEL */}
-                        <section id="tasks">
-                            <TasksPanel patientId={patient.id} tasks={tasks} />
-                        </section>
-
-                        {/* ISSUES PANEL */}
-                        <section id="issues">
-                            <IssuesPanel patientId={patient.id} issues={issues} />
-                        </section>
-
-                        {/* INVESTIGATIONS PANEL */}
-                        <section id="investigations">
-                            <InvestigationsPanel patientId={id} investigations={investigations} />
-                        </section>
-
-                        {/* INTERVENTIONS PANEL */}
-                        <section id="interventions">
-                            <InterventionsPanel patientId={id} interventions={interventions} />
-                        </section>
-                    </div>
                 </main>
             </div>
 

@@ -2,7 +2,7 @@
 
 import { supabase } from '@/lib/supabase';
 import { revalidatePath } from 'next/cache';
-import { getMelbourneDate } from '@/lib/date-time';
+import { getMelbourneDate, ROSTER_EXPIRATION_HOURS } from '@/lib/date-time';
 import { PatientDetails, getPatientDetails } from '@/lib/data';
 import { cleanPatientDisplayName, normalizePatientName } from '@/lib/patient-name';
 
@@ -1183,9 +1183,29 @@ export async function getLLMCostStats(period: 'day' | 'week' | 'month' = 'day') 
     if (period === 'week') startDate.setDate(now.getDate() - 7);
     if (period === 'month') startDate.setDate(now.getDate() - 30);
 
+    const periodLabel = period === 'day' ? 'Today' : (period === 'week' ? 'Last 7 Days' : 'Last 30 Days');
+
+    // 1. Optimized path: Single Postgres SQL aggregation RPC (0 table-scan row transfer)
+    try {
+        const { data: rpcData, error: rpcError } = await supabase
+            .rpc('get_llm_cost_summary', { start_date: startDate.toISOString() });
+
+        if (!rpcError && rpcData && rpcData.length > 0) {
+            const row = rpcData[0];
+            return {
+                totalCost: Number(row.total_cost || 0),
+                count: Number(row.call_count || 0),
+                periodLabel
+            };
+        }
+    } catch {
+        // Fall back to table query if RPC is not yet deployed
+    }
+
+    // 2. Fallback path for backwards compatibility (projects only cost_usd)
     const { data, error } = await supabase
         .from('llm_calls')
-        .select('cost_usd, tokens_in, tokens_out')
+        .select('cost_usd')
         .gte('created_at', startDate.toISOString());
 
     if (error) {
@@ -1193,11 +1213,11 @@ export async function getLLMCostStats(period: 'day' | 'week' | 'month' = 'day') 
         return { totalCost: 0, count: 0, periodLabel: 'Error' };
     }
 
-    const totalCost = data.reduce((acc, curr) => acc + (curr.cost_usd || 0), 0);
+    const totalCost = data.reduce((acc, curr) => acc + (Number(curr.cost_usd) || 0), 0);
     return {
         totalCost,
         count: data.length,
-        periodLabel: period === 'day' ? 'Today' : (period === 'week' ? 'Last 7 Days' : 'Last 30 Days')
+        periodLabel
     };
 }
 
@@ -1647,28 +1667,58 @@ export async function getBatchPatientArtifacts(
     return result;
 }
 
+export interface TodayRosterResult {
+    patientIds: string[];
+    updatedAt: string | null;
+}
+
 /**
- * Server action to fetch today's roster of patient IDs from Supabase daily_roster.
- * Gracefully falls back to empty array if table does not exist.
+ * Server action to fetch today's active roster of patient IDs from Supabase daily_roster.
+ * Automatically respects the 18-hour rolling expiration window so yesterday's obsolete lists
+ * expire back to 0 patients, while lists prepared the evening before (<18h ago) remain active.
+ * Gracefully falls back to empty array if table does not exist or roster has expired.
  */
-export async function getTodayRoster(targetDate?: string): Promise<string[]> {
-    const date = targetDate || getMelbourneDate();
+export async function getTodayRoster(targetDate?: string): Promise<TodayRosterResult> {
     try {
+        if (targetDate) {
+            const { data, error } = await supabase
+                .from('daily_roster')
+                .select('patient_ids, updated_at')
+                .eq('roster_date', targetDate)
+                .maybeSingle();
+
+            if (error || !data) {
+                return { patientIds: [], updatedAt: null };
+            }
+            return {
+                patientIds: Array.isArray(data.patient_ids) ? (data.patient_ids as string[]) : [],
+                updatedAt: data.updated_at || null,
+            };
+        }
+
+        // Rolling 18-hour window check: find the latest roster updated within the last 18 hours
+        const cutoffTime = new Date(Date.now() - ROSTER_EXPIRATION_HOURS * 60 * 60 * 1000).toISOString();
         const { data, error } = await supabase
             .from('daily_roster')
-            .select('patient_ids')
-            .eq('roster_date', date)
+            .select('patient_ids, updated_at, roster_date')
+            .gte('updated_at', cutoffTime)
+            .order('updated_at', { ascending: false })
+            .limit(1)
             .maybeSingle();
 
-        if (error) {
-            return [];
+        if (error || !data) {
+            return { patientIds: [], updatedAt: null };
         }
-        if (data && Array.isArray(data.patient_ids)) {
-            return data.patient_ids as string[];
+
+        if (Array.isArray(data.patient_ids)) {
+            return {
+                patientIds: data.patient_ids as string[],
+                updatedAt: data.updated_at || null,
+            };
         }
-        return [];
+        return { patientIds: [], updatedAt: null };
     } catch {
-        return [];
+        return { patientIds: [], updatedAt: null };
     }
 }
 
