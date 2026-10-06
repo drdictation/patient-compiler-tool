@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
@@ -199,7 +199,19 @@ function QuickCopyButton({ patientId, type, label, cachedContent }: QuickCopyBut
     );
 }
 
-export function PatientList({ initialPatients }: { initialPatients: Patient[] }) {
+interface PatientListProps {
+    initialPatients: Patient[];
+    allPatients?: Patient[];
+    initialTodayPatientIds?: string[];
+    initialTodayUpdatedAt?: string | null;
+}
+
+export function PatientList({
+    initialPatients,
+    allPatients = [],
+    initialTodayPatientIds = [],
+    initialTodayUpdatedAt = null
+}: PatientListProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
 
@@ -213,11 +225,20 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
     // Managing Filters
     const [activeRecordPatient, setActiveRecordPatient] = useState<{ id: string; name: string } | null>(null);
 
+    // Initial server roster validation
+    const hasValidInitialRoster = initialTodayPatientIds.length > 0 && initialTodayUpdatedAt && !isRosterExpired(initialTodayUpdatedAt);
+
     // Today's List State (with rolling 18-hour expiration)
-    const [todayPatientIds, setTodayPatientIds] = useState<string[]>([]);
-    const [todayListUpdatedAt, setTodayListUpdatedAt] = useState<string | null>(null);
+    const [todayPatientIds, setTodayPatientIds] = useState<string[]>(
+        hasValidInitialRoster ? initialTodayPatientIds : []
+    );
+    const [todayListUpdatedAt, setTodayListUpdatedAt] = useState<string | null>(
+        hasValidInitialRoster ? initialTodayUpdatedAt : null
+    );
     const [timeRemainingText, setTimeRemainingText] = useState<string>('');
-    const [viewMode, setViewMode] = useState<'today' | 'all'>('all');
+    const [viewMode, setViewMode] = useState<'today' | 'all'>(
+        hasValidInitialRoster ? 'today' : 'all'
+    );
     const [isTodayDialogOpen, setIsTodayDialogOpen] = useState(false);
     const [isReferralIntakeOpen, setIsReferralIntakeOpen] = useState(false);
     const [expandedPatientId, setExpandedPatientId] = useState<string | null>(null);
@@ -260,31 +281,50 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
             console.error('Failed to load today patient data from localStorage', e);
         }
 
-        // Cross-device sync: Check server roster for active list within 18 hours
-        getTodayRoster().then(serverRoster => {
-            const serverIds = serverRoster.patientIds || [];
-            const serverUpdatedAt = serverRoster.updatedAt;
+        // Cross-device sync function
+        const syncWithServer = () => {
+            getTodayRoster().then(serverRoster => {
+                const serverIds = serverRoster.patientIds || [];
+                const serverUpdatedAt = serverRoster.updatedAt;
 
-            if (serverIds.length > 0 && serverUpdatedAt && !isRosterExpired(serverUpdatedAt)) {
-                setTodayPatientIds(serverIds);
-                setTodayListUpdatedAt(serverUpdatedAt);
-                setViewMode('today');
-                try {
-                    localStorage.setItem('pct_today_patient_ids', JSON.stringify(serverIds));
-                    localStorage.setItem('pct_today_updated_at', serverUpdatedAt);
-                } catch (e) {
-                    console.error(e);
+                if (serverIds.length > 0 && serverUpdatedAt && !isRosterExpired(serverUpdatedAt)) {
+                    setTodayPatientIds(serverIds);
+                    setTodayListUpdatedAt(serverUpdatedAt);
+                    setViewMode('today');
+                    try {
+                        localStorage.setItem('pct_today_patient_ids', JSON.stringify(serverIds));
+                        localStorage.setItem('pct_today_updated_at', serverUpdatedAt);
+                    } catch (e) {
+                        console.error(e);
+                    }
+                } else if (localIds.length > 0 && localUpdatedAt && !isRosterExpired(localUpdatedAt)) {
+                    // Save existing valid local roster to server so other devices can pick it up
+                    saveTodayRoster(localIds).catch(() => {});
+                } else if (serverIds.length === 0 && localIds.length === 0) {
+                    setTodayPatientIds([]);
+                    setTodayListUpdatedAt(null);
                 }
-            } else if (localIds.length > 0 && localUpdatedAt && !isRosterExpired(localUpdatedAt)) {
-                // Save existing valid local roster to server so other devices can pick it up
-                saveTodayRoster(localIds).catch(() => {});
-            } else if (serverIds.length === 0 && localIds.length === 0) {
-                setTodayPatientIds([]);
-                setTodayListUpdatedAt(null);
+            }).catch(err => {
+                console.debug('Could not load roster from server, using local:', err);
+            });
+        };
+
+        syncWithServer();
+
+        // Listen for tab focus / mobile browser foreground events to immediately pull roster changes from other devices
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                syncWithServer();
             }
-        }).catch(err => {
-            console.debug('Could not load roster from server, using local:', err);
-        });
+        };
+
+        window.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('focus', handleVisibilityChange);
+
+        return () => {
+            window.removeEventListener('visibilitychange', handleVisibilityChange);
+            window.removeEventListener('focus', handleVisibilityChange);
+        };
     }, []);
 
     // Countdown and automatic expiration check for Today's List (18h limit)
@@ -557,11 +597,19 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
         return () => window.removeEventListener('paste', handleGlobalPaste);
     }, [viewMode, isTodayDialogOpen, isReferralIntakeOpen, activeRecordPatient]);
 
+    // Directory lookup to resolve patients on today's list even when initialPatients is filtered
+    const patientLookup = useMemo(() => {
+        const map = new Map<string, Patient>();
+        allPatients.forEach(p => map.set(p.id, p));
+        initialPatients.forEach(p => map.set(p.id, p));
+        return map;
+    }, [allPatients, initialPatients]);
+
     // Filter and order patients for display
-    const todayPatients = initialPatients.filter(p => todayPatientIds.includes(p.id));
-    const sortedTodayPatients = [...todayPatients].sort((a, b) => {
-        return todayPatientIds.indexOf(a.id) - todayPatientIds.indexOf(b.id);
-    });
+    const todayPatients = todayPatientIds
+        .map(id => patientLookup.get(id))
+        .filter((p): p is Patient => !!p);
+    const sortedTodayPatients = todayPatients;
 
     const displayedPatients = viewMode === 'today'
         ? sortedTodayPatients.filter(p => {
@@ -1473,7 +1521,7 @@ export function PatientList({ initialPatients }: { initialPatients: Patient[] })
             <TodayListDialog
                 open={isTodayDialogOpen}
                 onOpenChange={setIsTodayDialogOpen}
-                patients={initialPatients}
+                patients={allPatients.length > 0 ? allPatients : initialPatients}
                 selectedIds={todayPatientIds}
                 onSaveList={handleSaveTodayList}
             />

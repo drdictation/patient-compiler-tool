@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -44,10 +44,17 @@ export function TodayListDialog({
     const [pasteArea, setPasteArea] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
 
-    // Sync state when dialog opens
-    const handleOpenChange = (isOpen: boolean) => {
-        if (isOpen) {
+    // Always synchronize currentIds with selectedIds whenever the dialog opens
+    useEffect(() => {
+        if (open) {
             setCurrentIds(selectedIds);
+            setPasteArea('');
+            setSearchQuery('');
+        }
+    }, [open, selectedIds]);
+
+    const handleOpenChange = (isOpen: boolean) => {
+        if (!isOpen) {
             setPasteArea('');
             setSearchQuery('');
         }

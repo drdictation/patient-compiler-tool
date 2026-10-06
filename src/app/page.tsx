@@ -10,6 +10,7 @@ import { TasksSidebar } from '@/components/tasks-sidebar';
 import { GlobalSearch } from '@/components/global-search';
 import { EndoscopyListDialog } from '@/components/endoscopy-list-dialog';
 import { MobileHeaderActions } from '@/components/mobile-header-actions';
+import { getTodayRoster } from '@/app/actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -79,10 +80,25 @@ export default async function Dashboard(props: DashboardProps) {
     query = query.order('last_seen', { ascending: false, nullsFirst: false });
   }
 
-  const [{ data: patients, error }, { count: totalRecords }] = await Promise.all([
+  const [{ data: patients, error }, { count: totalRecords }, { data: allPatientsSummary }, initialRoster] = await Promise.all([
     query,
     // `estimated` is much cheaper than exact full-table counts on larger datasets.
     supabase.from('source_record_cache').select('*', { count: 'estimated', head: true }),
+    // Full directory for Today's List matching & selection regardless of active dashboard filters
+    supabase.from('patient_summary').select(`
+      id,
+      display_name,
+      normalized_name,
+      identity_verified,
+      last_seen,
+      encounter_count,
+      record_count,
+      referring_doctor,
+      next_recall_date,
+      suggested_items_count,
+      pending_task_count
+    `).order('display_name'),
+    getTodayRoster()
   ]);
 
   if (error) {
@@ -96,6 +112,8 @@ export default async function Dashboard(props: DashboardProps) {
       </div>
     );
   }
+
+  const allDirectoryPatients = allPatientsSummary || patients || [];
 
   return (
     <div className="container mx-auto py-4 md:py-8 px-4">
@@ -115,7 +133,7 @@ export default async function Dashboard(props: DashboardProps) {
           </div>
 
           {/* Mobile-only clean overflow header */}
-          <MobileHeaderActions patients={patients || []} />
+          <MobileHeaderActions patients={allDirectoryPatients} />
         </div>
 
         {/* Desktop: LLM Cost Widget + Actions Row (100% UNCHANGED) */}
@@ -124,7 +142,7 @@ export default async function Dashboard(props: DashboardProps) {
             <LLMCostDisplay />
           </div>
           <div className="flex items-center gap-2">
-            <EndoscopyListDialog patients={patients || []} />
+            <EndoscopyListDialog patients={allDirectoryPatients} />
             <AddPatientDialog />
             <GlobalSearch />
             <TasksSidebar />
@@ -143,7 +161,12 @@ export default async function Dashboard(props: DashboardProps) {
         </div>
       </div>
 
-      <PatientList initialPatients={patients || []} />
+      <PatientList 
+        initialPatients={patients || []} 
+        allPatients={allDirectoryPatients}
+        initialTodayPatientIds={initialRoster?.patientIds || []}
+        initialTodayUpdatedAt={initialRoster?.updatedAt || null}
+      />
     </div>
   );
 }
