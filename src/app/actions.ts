@@ -1741,12 +1741,14 @@ export async function saveTodayRoster(patientIds: string[], targetDate?: string)
             );
 
         if (error) {
+            console.warn('[daily_roster] Failed to save roster to Supabase:', error.message);
             return { success: false, error: error.message };
         }
 
         revalidatePath('/');
         return { success: true };
     } catch (e: any) {
+        console.warn('[daily_roster] Error saving roster:', e.message);
         return { success: false, error: e.message || 'Failed to save roster' };
     }
 }

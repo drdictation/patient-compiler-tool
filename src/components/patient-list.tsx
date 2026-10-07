@@ -469,7 +469,14 @@ export function PatientList({
         } catch (e) {
             console.error('Failed to save today patient ids to localStorage', e);
         }
-        saveTodayRoster(ids).catch(() => {});
+        saveTodayRoster(ids).then(res => {
+            if (res && !res.success) {
+                console.warn('[daily_roster] Cloud sync error:', res.error);
+                toast.warning("Saved locally. Run daily_roster SQL migration in Supabase to sync across devices.");
+            }
+        }).catch((err) => {
+            console.error('[daily_roster] Save failed:', err);
+        });
         if (ids.length > 0) {
             setViewMode('today');
         }

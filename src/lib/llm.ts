@@ -634,8 +634,13 @@ export interface SmartNoteGenerationResult {
 export async function generateFromPrompt(
     request: GenerationRequest
 ): Promise<SmartNoteGenerationResult> {
-    if (request.model === CONSULT_LETTER_MODEL) {
-        return generateFromOpenAI(request);
+    if (request.model === CONSULT_LETTER_MODEL || request.model === 'gpt-5.6-luna' || request.model === 'gpt-6-luna') {
+        try {
+            return await generateFromOpenAI(request);
+        } catch (e: any) {
+            console.warn(`[LLM] ${request.model} failed (${e.message}), falling back to gemini-3.8-flash`);
+            return await generateFromPrompt({ ...request, model: 'gemini-3.8-flash' });
+        }
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
@@ -647,7 +652,9 @@ export async function generateFromPrompt(
         'gemini-3.0-flash': 'gemini-3-flash-preview', // Backward-compatible alias
         'gemini-3.1-flash-lite-preview': 'gemini-3.1-flash-lite-preview',
         'gemini-3.1-flash-lite': 'gemini-3.1-flash-lite',
-        'gpt-5.6-luna': 'gpt-5.6-luna'
+        'gemini-3.8-flash': 'gemini-3.8-flash',
+        'gpt-5.6-luna': 'gpt-5.6-luna',
+        'gpt-6-luna': 'gpt-6-luna'
     };
 
     const apiModel = modelMap[request.model];
