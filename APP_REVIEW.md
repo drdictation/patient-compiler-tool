@@ -14,7 +14,7 @@
 | **5. Few-shot examples contain errors/leakage** | P0 | 🟡 **PARTIAL** | Fatal validation rule prevents synthetic few-shot patient names (e.g. `David Miller`, `Sarah Jenkins`) from leaking into letters. Example pruning pending Phase 8. |
 | **6. "Complex case" encourages unsupported extrapolation** | P0 | ✅ **RESOLVED** | Replaced `COMPLEXITY_DIRECTIVE` with `DETAILED_LETTER_DIRECTIVE`, strictly grounded in transcript evidence and forbidding ungrounded pathophysiology/medicolegal claims. |
 | **7. Prompt/data boundaries weak (prompt injection)** | P1 | ✅ **RESOLVED** | Structured via `GenerationRequest` schema (`src/lib/prompts/types.ts`). System prompt separated from transcript data enclosed in strict `=== BEGIN CLINICAL TRANSCRIPT SOURCE ===` delimiters with anti-injection directive. |
-| **8. Default model preview / uncontrolled routing** | P1 | ✅ **RESOLVED** | Centralized in `src/lib/model-config.ts`. Set to `gpt-5.6-luna` for letters and `gemini-3.1-flash-lite` for consult notes. |
+| **8. Default model preview / uncontrolled routing** | P1 | ✅ **RESOLVED** | Centralized in `src/lib/model-config.ts`. Set to `gpt-6-luna` (with `gemini-3.8-flash` fallback) for letters and `gemini-3.1-flash-lite` for consult notes. |
 | **9. Transcript input has no bounds or normalisation** | P1 | ✅ **RESOLVED** | Pure `normaliseTranscript()` in `src/lib/generation/transcript.ts` (NFC normalization, CRLF->LF, whitespace collapse, 50-250,000 char bounds). |
 | **10. Audio segments transcribed sequentially** | P1 | 🟡 **PARTIAL** | Audio transcription server action with 25MB limit. Boundary overlap reconciliation planned. |
 | **11. Additional-document context duplicates facts** | P1 | ⚪ **ROADMAP** | Scheduled for Phase 10 context optimization. |

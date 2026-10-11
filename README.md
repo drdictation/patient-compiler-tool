@@ -44,9 +44,10 @@
 │                                                                                        │
 │  ┌──────────────────────────────────────────────────────────────────────────────────┐  │
 │  │ AI Multi-Model Routing (src/lib/model-config.ts, src/lib/llm.ts)                 │  │
-│  │ - Referrer Letters: gpt-5.6-luna (OpenAI Responses API)                          │  │
+│  │ - Referrer Letters: gpt-6-luna (OpenAI Responses API, fallback gemini-3.8-flash) │  │
 │  │ - Consult Notes & Patient Summaries: gemini-3.1-flash-lite (Google GenAI)        │  │
 │  │ - Endoscopy & Clinical Briefs: gemini-2.5-flash                                  │  │
+│  │ - Referral Intake OCR Parser: gemini-2.5-flash                                   │  │
 │  │ - Email Matching: gemini-3.1-flash-lite                                          │  │
 │  │ - Task Extraction: Groq Llama 4 Scout / GPT OSS 120B                             │  │
 │  │ - Audio Transcription: Groq Whisper Large v3                                     │  │
@@ -80,7 +81,7 @@
 - **Audio Recording or Paste**: Browser-based recording via `MediaRecorder` transcribed via Groq Whisper (`whisper-large-v3`).
 - **Decoupled Asynchronous Lifecycle**:
   - `prepareSmartNoteGeneration()`: Normalises transcript, checks 50-250k bounds, computes SHA-256 hash, saves raw transcript once, and builds authoritative context.
-  - `generateClinicalDocuments()`: Runs internal consult note (`gemini-3.1-flash-lite`), specialist referrer letter (`gpt-5.6-luna`), and patient summary (`gemini-3.1-flash-lite`) concurrently via `Promise.allSettled`.
+  - `generateClinicalDocuments()`: Runs internal consult note (`gemini-3.1-flash-lite`), specialist referrer letter (`gpt-6-luna` with `gemini-3.8-flash` fallback), and patient summary (`gemini-3.1-flash-lite`) concurrently via `Promise.allSettled`.
   - `extractAndSaveTasks()`: Extracts tasks via Groq Llama 4 and batch-inserts in a single query asynchronously without delaying letter presentation.
 - **Sub-specialty Prompts**: General, IBD, Functional GI, Oesophageal, and EoE prompts routed strictly via `src/lib/prompts/registry.ts`.
 - **`DETAILED_LETTER_DIRECTIVE`**: High-completeness mode grounded strictly in transcript facts (forbids ungrounded pathophysiology or medicolegal speculation).
@@ -91,7 +92,14 @@
 - **Strict Tone Directives**: Treats the patient as an articulate adult. Absolutely forbids condescending cheerleading clichés ("You've got this!", "Be kind to yourself!") or baby talk ("tummy troubles").
 - **Grounded Physiological Explanations**: Clearly explains complex gut-brain mechanisms discussed (visceral hypersensitivity, dysmotility, pelvic floor dyssynergia) and management steps (medications with titration, toilet posture with footstool/Squatty Potty biomechanics, dietary protocols, investigations, and red flags).
 
-### 4. 0ms Formatted Quick-Copy & Today's List
+### 4. Referral Intake & Document OCR Scanner (`/api/referral-intake`)
+- **Document Ingestion**: Client-side OCR via `tesseract.js` + LLM extraction (`gemini-2.5-flash`) parsing referral letters, endoscopy lists, or scanned consults.
+- **Dual Mode**:
+  - `endoscopy`: 3-point briefing card (Indication, Risks & Context, Procedural Actions/biopsy protocol).
+  - `consult`: Clinical review card (Reason for Referral, Medical History & Meds, Investigations, Questions & Plan).
+- **Patient Matching & Merging**: Normalizes names, strips honorifics (`cleanPatientName`), matches existing patients or registers new patients, and appends structured cards directly into patient records.
+
+### 5. 0ms Formatted Quick-Copy & Today's List
 - **0ms Instant Copy**: `getBatchPatientArtifacts` pre-fetches the latest note, letter, and patient summary for all patients in just 2 queries across encounters.
 - **Rich HTML Clipboard**: Generates beautifully styled HTML (`text/html` in 10pt Arial with indented lists, styled paragraphs, and bold headings) alongside plain text (`text/plain`). Doctors can 1-click paste notes or letters directly into clinical software (Genie, Best Practice, MedicalDirector) or email with zero formatting corruption.
 - **Today's List Session Management & Rolling 18h Expiry**: Allows clinicians to filter their workspace to today's consulting or endoscopy list.
@@ -101,22 +109,22 @@
   - **1-Click "Clear List" Action**: Clinicians can wipe the entire list instantly via the "Clear List" banner button with prompt confirmation, which purges local storage, clears the artifact cache, and syncs an empty roster to Supabase without having to remove patients one by one.
   - **Appointment Matching**: Includes a dedicated list manager (`TodayListDialog`) where clinicians can select patients or paste a list of names from an appointment book to auto-match.
 
-### 5. Mobile Consulting & Device Resilience Suite
+### 6. Mobile Consulting & Device Resilience Suite
 - **Mobile Consult Bottom Sheet (`MobileConsultSheet`)**: Dedicated touch interface for consulting from a phone or tablet. Includes an audio frequency waveform visualizer (24 frequency bars via Web Audio API `AnalyserNode`), New/Review toggles, Detailed Letter toggle, and Patient Summary inclusion.
 - **Screen Wake Lock API (`wake-lock.ts`)**: Automatically requests `navigator.wakeLock` during recording and AI generation to prevent the phone screen from sleeping or dimming.
 - **Local IndexedDB Audio Draft Buffering (`local-cache.ts`)**: Streams audio recording chunks locally to browser IndexedDB (`pct_audio_cache`) on the phone to guard against unexpected disconnections or refreshes. Cleared immediately on successful transcription.
 - **Mobile Patient Experience (`PatientMobileView`)**: 3-tab responsive layout (`Timeline`, `Clinical`, `Recalls`) tailored for smaller screens.
 
-### 6. Endoscopy List & Pre-Visit Briefings
+### 7. Endoscopy List & Pre-Visit Briefings
 - **Pre-Visit Brief**: Instant on-demand synthesis of active issues, ongoing medications, and pending investigations prior to outpatient visits.
 - **Endoscopy List Briefing** (`/api/endoscopy-briefing`): Multi-patient batch generator producing high-contrast, printable 15-second procedural briefing cards (indications, risk factors, specific biopsy protocols).
 
-### 7. Gmail Inbox Integration
+### 8. Gmail Inbox Integration
 - Ingests emails or iOS voice memos sent via Gmail.
 - AI patient matching using `gemini-3.1-flash-lite` calculates match confidence (0-100%).
 - Clinician can assign inbox items directly to patient records, letters, or tasks.
 
-### 8. Telemetry & Cost Tracking
+### 9. Telemetry & Cost Tracking
 - Every LLM interaction is instrumented via `logLLMCall` into the `llm_calls` table with input/output token counts, latency, USD micro-costs, provider, and model metadata.
 
 ---
@@ -198,10 +206,11 @@ Configured centrally in `src/lib/model-config.ts` and `src/lib/llm.ts`:
 
 | Purpose | Model | Provider / Endpoint |
 |:---|:---|:---|
-| **Referrer Letters** | `gpt-5.6-luna` | OpenAI (`/v1/responses`) |
+| **Referrer Letters** | `gpt-6-luna` (fallback `gemini-3.8-flash`) | OpenAI (`/v1/responses`) |
 | **Consult Notes** | `gemini-3.1-flash-lite` | Google Generative Language API |
 | **Patient Summaries** | `gemini-3.1-flash-lite` | Google Generative Language API |
 | **Endoscopy & Clinical Briefs**| `gemini-2.5-flash` | Google Generative Language API |
+| **Referral Intake OCR Parser** | `gemini-2.5-flash` | Google Generative Language API |
 | **Email Patient Matcher** | `gemini-3.1-flash-lite` | Google Generative Language API |
 | **Task Extraction** | `llama-4-scout-17b` or `gpt-oss-120b` | Groq API (`/openai/v1/chat/completions`) |
 | **Voice Transcription** | `whisper-large-v3` | Groq Audio API |
@@ -249,6 +258,7 @@ Execute the SQL migrations in the Supabase SQL Editor in the following sequence:
 8. `supabase_migration_performance_indexes.sql` (High-performance composite indexes)
 9. `supabase_migration_artifact_types.sql` (Outbound referral & patient summary types)
 10. `supabase_migration_inbox.sql` (Gmail inbox items table)
+11. `supabase_migration_daily_roster.sql` (Cross-device daily roster sync)
 
 ### 3. Local Development
 ```bash
@@ -261,19 +271,21 @@ Open [http://localhost:3000](http://localhost:3000) and sign in using `APP_PASSW
 
 ## 🧪 Testing & Verification
 
-The generation engine has comprehensive test coverage verifying contracts, concurrency, validation rules, prompt injection defenses, retry budgets, and routing:
+The generation engine has comprehensive test coverage verifying contracts, concurrency, validation rules, prompt injection defenses, retry budgets, referral intake contracts, and routing:
 
 ```bash
 node --import tsx --env-file=.env --test src/lib/generation/*.test.ts
 ```
 
-**Test Suite Coverage (78 passing tests across 6 suites):**
+**Test Suite Coverage (84 passing tests across 8 suites):**
 - `actions.test.ts`: Smart Note preparation, encounter reuse, raw transcript persistence.
 - `concurrency.test.ts`: Parallel note, letter, and patient summary execution (`Promise.allSettled`), single-query batch task insertion.
 - `llm-request.test.ts`: Error classification (`RETRYABLE` vs `NON_RETRYABLE`), request timeouts, and backoff.
 - `letter-validation.test.ts`: 10 fatal rules (placeholders, scaffolding, code fences, headers) and 6 warning rules.
 - `prompt-injection.test.ts`: Boundary isolation, security policy adherence, metadata handling.
+- `referral-intake.test.ts`: Patient name normalization, honorific stripping, and referral prep card contracts.
 - `routing.test.ts`: Exhaustive coverage of all 10 valid `(templateType, letterType)` routing pairs and directive validation.
+- `transcript.test.ts`: Unicode NFC normalization, character limits, and SHA-256 transcript hashing.
 
 ---
 

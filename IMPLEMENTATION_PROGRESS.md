@@ -110,7 +110,7 @@
 ### 7b. Today's List Rolling 18-Hour Expiry & 1-Click Clear Action
 - **Status**: Complete
 - **Date Completed**: 2026-09-27
-- **Commit Hash**: `HEAD`
+- **Commit Hash**: `6c07fac`
 - **Architecture & Problem Solved**:
   - *Zombie List Bug Fix*: Previously, `localStorage` saved `pct_today_patient_ids` indefinitely without any timestamp. On every morning mount, if the server roster for the new date was empty, the client mistakenly re-uploaded yesterday's patient list to today's date in `daily_roster`, causing obsolete lists to persist indefinitely unless deleted patient-by-patient.
   - *Rolling 18-Hour Expiration (`ROSTER_EXPIRATION_HOURS = 18`)*: Added `isRosterExpired` and `formatRosterExpiryRemaining` in `src/lib/date-time.ts`. Lists created during daytime clinics expire overnight. Lists prepped the evening before (e.g. at 7 PM for next-day colonoscopies) remain active and pre-cached through the entire following day.
@@ -123,6 +123,37 @@
   - `src/components/patient-list.tsx` (added mount expiration purge, live ticker, countdown chip, 1-click `Clear List` button)
   - `src/components/today-list-dialog.tsx` (updated modal description with 18h auto-reset notice)
 - **Tests Run**: `npx tsc --noEmit` (passing with zero errors)
+- **Unresolved Risks / Follow-up Items**: None.
+
+### 7c. Referral Intake & Document OCR Workflow
+- **Status**: Complete
+- **Date Completed**: 2026-09-13
+- **Commit Hash**: `476557f`, `ca54a99`
+- **Architecture & Problem Solved**:
+  - *Document Ingestion & OCR*: Integrated Tesseract.js client-side OCR and server parser endpoint (`/api/referral-intake`) to ingest physical letters, referral slips, and endoscopy schedules.
+  - *Structured Cards*: Generates 3-point procedural briefing cards for endoscopy lists and 4-point consult cards for outpatient intake.
+  - *Patient Matching & Resolution*: Strips titles (`cleanPatientName`), fuzzy matches against existing patients, or provisions new records. Supports scanning directly into an open patient's record.
+- **Files Changed**:
+  - `src/app/api/referral-intake/route.ts` (created)
+  - `src/components/referral-intake-dialog.tsx` (created)
+  - `src/lib/patient-name.ts` (created)
+  - `src/lib/generation/referral-intake.test.ts` (created, 6 tests)
+- **Tests Run**: `node --import tsx --env-file=.env --test src/lib/generation/*.test.ts` (84 passing tests)
+- **Unresolved Risks / Follow-up Items**: None.
+
+### 7d. GPT-6 Luna Model Upgrade & Cloud Sync Hardening
+- **Status**: Complete
+- **Date Completed**: 2026-10-07
+- **Commit Hash**: `31d75ad`, `f399cd6`
+- **Architecture & Problem Solved**:
+  - Upgraded specialist letter model from `gpt-5.6-luna` to `gpt-6-luna` with automated runtime fallback to `gemini-3.8-flash`.
+  - Added warning toasts and error handling when `daily_roster` table migrations are missing in Supabase.
+- **Files Changed**:
+  - `src/lib/model-config.ts` (updated `CONSULT_LETTER_MODEL` to `gpt-6-luna`)
+  - `src/lib/llm.ts` (added fallback to `gemini-3.8-flash`)
+  - `src/components/patient-list.tsx` (hardened daily roster cloud sync)
+  - `src/app/actions.ts` (roster error logging)
+- **Tests Run**: `node --import tsx --env-file=.env --test src/lib/generation/*.test.ts` (84 passing tests)
 - **Unresolved Risks / Follow-up Items**: None.
 
 *(Note on Spec Phase 7: Synthetic evaluation fixtures were previously removed by user direction as out of scope).*

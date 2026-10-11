@@ -1,7 +1,7 @@
 # Smart Note Feature Specification & Architecture
 
 > **STATUS: ✅ PRODUCTION READY & REFACTORED**
-> The Smart Note system has been upgraded from a legacy sequential action into a decoupled, concurrent, resilient, and deterministically validated pipeline covered by an automated test suite (78 passing tests in `src/lib/generation/*.test.ts`).
+> The Smart Note system has been upgraded from a legacy sequential action into a decoupled, concurrent, resilient, and deterministically validated pipeline covered by an automated test suite (84 passing tests across 8 suites in `src/lib/generation/*.test.ts`).
 
 ---
 
@@ -46,7 +46,7 @@ Rather than a single blocking server action, generation is separated into three 
 │                                               │ │                                       │
 │ ┌───────────────┐ ┌───────────────┐ ┌───────┐ │ │ - Groq Llama 4 / GPT OSS extraction   │
 │ │ Consult Note  │ │ Referrer Ltr  │ │Patient│ │ │ - Bounded timeout (25s)               │
-│ │ (gemini-3.1-  │ │ (gpt-5.6-luna)│ │Summary│ │ │ - Single-query batch SQL insert       │
+│ │ (gemini-3.1-  │ │ (gpt-6-luna)  │ │Summary│ │ │ - Single-query batch SQL insert       │
 │ │  flash-lite)  │ │               │ │(gemini│ │ │ - Non-blocking background promise     │
 │ └───────┬───────┘ └───────┬───────┘ └───┬───┘ │ │ - UI never blocked by task latency    │
 │         └─────────────────┼─────────────┘     │ └───────────────────────────────────────┘
@@ -202,7 +202,7 @@ Network requests are wrapped with operational budgets and intelligent retry poli
 ## 8. Active Model Configuration (`src/lib/model-config.ts`)
 
 Clinical document generation uses specialized models configured centrally:
-- **`CONSULT_LETTER_MODEL`**: `gpt-5.6-luna` (OpenAI Responses API) — optimized for nuanced medical phrasing and Australian specialist formatting.
+- **`CONSULT_LETTER_MODEL`**: `gpt-6-luna` (OpenAI Responses API, fallback `gemini-3.8-flash`) — optimized for nuanced medical phrasing and Australian specialist formatting.
 - **`CONSULT_NOTE_MODEL`**: `gemini-3.1-flash-lite` (Google Generative Language API) — fast, high-throughput SOAP structure.
 - **`PATIENT_SUMMARY_MODEL`**: `gemini-3.1-flash-lite` (Google Generative Language API) — empathetic, articulate, non-patronising patient communication.
 - **Task Extraction**: Groq Llama 4 Scout (`meta-llama/llama-4-scout-17b-16e-instruct`) or GPT OSS 120B.
@@ -212,8 +212,8 @@ Clinical document generation uses specialized models configured centrally:
 
 ## 9. Testing & Verification
 
-Run the full automated test suite covering generation contracts, concurrency, validation, prompt injection, timeouts, and routing:
+Run the full automated test suite covering generation contracts, concurrency, validation, prompt injection, timeouts, referral intake contracts, and routing:
 ```bash
 node --import tsx --env-file=.env --test src/lib/generation/*.test.ts
 ```
-Expected result: **78 passing tests across 6 test suites**.
+Expected result: **84 passing tests across 8 test suites**.

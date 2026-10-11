@@ -15,6 +15,7 @@ import { GlobalSearch } from '@/components/global-search';
 import { AddPatientDialog } from '@/components/add-patient-dialog';
 import { CreateDocumentDialog } from '@/components/create-document-dialog';
 import { PatientContentView } from '@/components/patient-content-view';
+import { PatientQaWidget } from '@/components/patient-qa-widget';
 import { notFound } from 'next/navigation';
 
 export const dynamic = 'force-dynamic';
@@ -125,6 +126,7 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                 {/* Secondary patient actions — pushed to the right on desktop */}
                 <div className="hidden sm:flex ml-auto items-center gap-2">
                     <GlobalScanButton patientId={patient.id} />
+                    <PatientQaWidget patientId={patient.id} patientName={patient.display_name} />
                     <PatientInfoToggle patient={patient} />
                     <EditablePatientTitle
                         patientId={patient.id}
