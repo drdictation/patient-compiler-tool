@@ -508,6 +508,7 @@ export interface SmartNoteOptions {
     /** Task extraction is opt-in because it makes a separate LLM request. */
     extractTasks?: boolean;
     model: SmartNoteModel;
+    typedNotes?: string;
 }
 
 export interface SmartNoteResult {
@@ -770,7 +771,8 @@ export async function prepareSmartNoteGeneration(options: SmartNoteOptions): Pro
         },
         model: options.model,
         extractTasks: extractTasksFlag,
-        promptVersion: '1.0' // initial version placeholder
+        promptVersion: '1.0', // initial version placeholder
+        typedNotes: options.typedNotes?.trim() || undefined
     };
 }
 
@@ -815,7 +817,10 @@ export async function generateClinicalDocuments(context: PreparedSmartNoteContex
                     throw new Error(`Incomplete generation: provider reported finish reason as "${genResult.finishReason}"`);
                 }
 
-                const content = genResult.content;
+                let content = genResult.content;
+                if (context.typedNotes) {
+                    content = `${content.trim()}\n\n### Additional Clinical Notes\n${context.typedNotes}`;
+                }
                 const artifactId = await saveArtifact(context.encounterId, 'INTERNAL_NOTE', content);
                 result.note = {
                     status: 'success',
@@ -1094,7 +1099,11 @@ export async function createSmartNote(options: SmartNoteOptions): Promise<SmartN
                     purpose: 'smart_note_consult',
                     patientId: context.patientId
                 });
-                result.noteArtifactId = await saveArtifact(encounterId, 'INTERNAL_NOTE', content);
+                let finalContent = content;
+                if (context.typedNotes) {
+                    finalContent = `${content.trim()}\n\n### Additional Clinical Notes\n${context.typedNotes}`;
+                }
+                result.noteArtifactId = await saveArtifact(encounterId, 'INTERNAL_NOTE', finalContent);
             } catch (e: any) {
                 result.errors.push(`Failed to generate note: ${e.message}`);
             }

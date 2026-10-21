@@ -57,6 +57,7 @@ export interface PreparedSmartNoteContext {
     model: SmartNoteModel;
     extractTasks: boolean;
     promptVersion: string;
+    typedNotes?: string;
 }
 
 export interface DocumentGenerationResult {

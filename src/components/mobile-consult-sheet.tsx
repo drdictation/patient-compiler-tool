@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Mic, Square, Loader2, CheckCircle2, ChevronDown, ChevronUp, FileText, AlertCircle, ShieldCheck, Sparkles, UserCheck } from 'lucide-react';
+import { Mic, Square, Loader2, CheckCircle2, ChevronDown, ChevronUp, FileText, AlertCircle, ShieldCheck, Sparkles, UserCheck, HelpCircle, PenLine } from 'lucide-react';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { getMelbourneDate } from '@/lib/date-time';
@@ -13,6 +13,8 @@ import { prepareSmartNoteGeneration, generateClinicalDocuments, extractAndSaveTa
 import { CONSULT_NOTE_MODEL } from '@/lib/model-config';
 import { requestScreenWakeLock, releaseScreenWakeLock } from '@/lib/audio/wake-lock';
 import { saveLocalAudioDraft, clearLocalAudioDraft } from '@/lib/audio/local-cache';
+import { PatientQaWidget } from '@/components/patient-qa-widget';
+import { Textarea } from '@/components/ui/textarea';
 import ReactMarkdown from 'react-markdown';
 
 interface PriorNote {
@@ -54,6 +56,8 @@ export function MobileConsultSheet({
     const [processStep, setProcessStep] = useState<string>('');
     const [wakeLockActive, setWakeLockActive] = useState(false);
     const [showPriorNotes, setShowPriorNotes] = useState(false);
+    const [showAskAi, setShowAskAi] = useState(false);
+    const [typedNotes, setTypedNotes] = useState('');
 
     // Audio level visualizer state
     const [audioLevels, setAudioLevels] = useState<number[]>(Array(24).fill(10));
@@ -297,7 +301,8 @@ export function MobileConsultSheet({
                     pronouns: 'auto'
                 },
                 extractTasks: true,
-                model: CONSULT_NOTE_MODEL
+                model: CONSULT_NOTE_MODEL,
+                typedNotes: typedNotes.trim() || undefined
             };
 
             const context = await prepareSmartNoteGeneration(options);
@@ -506,6 +511,46 @@ export function MobileConsultSheet({
                             </button>
                         </div>
                     )}
+
+                    {/* Typed Notes Box (Appended to consult note) */}
+                    <div className="w-full max-w-sm">
+                        <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 mb-1.5">
+                            <PenLine className="h-3.5 w-3.5 text-indigo-600" />
+                            <span>Additional Typed Notes</span>
+                            <span className="text-[10px] font-normal text-slate-400">(appended to consult note)</span>
+                        </label>
+                        <Textarea
+                            value={typedNotes}
+                            onChange={(e) => setTypedNotes(e.target.value)}
+                            placeholder="Type any quick observations or clinical notes to append to the generated note..."
+                            disabled={isProcessing}
+                            rows={3}
+                            className="text-xs bg-slate-50/70 border-slate-200 focus:bg-white resize-none rounded-xl"
+                        />
+                    </div>
+
+                    {/* Ask Patient History Widget Accordion */}
+                    <div className="w-full max-w-sm">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            type="button"
+                            onClick={() => setShowAskAi(!showAskAi)}
+                            className="w-full justify-between text-xs font-medium border-violet-200 text-violet-700 hover:bg-violet-50 rounded-xl h-10 bg-violet-50/30"
+                        >
+                            <span className="flex items-center gap-1.5">
+                                <Sparkles className="h-3.5 w-3.5 text-violet-600" />
+                                Ask AI About Patient
+                            </span>
+                            {showAskAi ? <ChevronUp className="h-4 w-4 text-violet-500" /> : <ChevronDown className="h-4 w-4 text-violet-500" />}
+                        </Button>
+
+                        {showAskAi && (
+                            <div className="mt-2">
+                                <PatientQaWidget patientId={patientId} patientName={patientName} embedded />
+                            </div>
+                        )}
+                    </div>
 
                     {/* View Prior Notes Accordion */}
                     <div className="w-full max-w-sm">

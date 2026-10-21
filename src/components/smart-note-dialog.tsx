@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
-import { Sparkles, Mic, Square, Loader2, Check, AlertCircle, FileText, Mail, UserCheck } from 'lucide-react';
+import { Sparkles, Mic, Square, Loader2, Check, AlertCircle, FileText, Mail, UserCheck, HelpCircle, PenLine } from 'lucide-react';
 import { prepareSmartNoteGeneration, generateClinicalDocuments, extractAndSaveTasks, SmartNoteOptions } from '@/app/actions';
 import { CONSULT_NOTE_MODEL } from '@/lib/model-config';
 import { toast } from 'sonner';
@@ -31,6 +31,7 @@ import { useRouter } from 'next/navigation';
 import { getMelbourneDate } from '@/lib/date-time';
 import ReactMarkdown from 'react-markdown';
 import { requestScreenWakeLock, releaseScreenWakeLock } from '@/lib/audio/wake-lock';
+import { PatientQaWidget } from '@/components/patient-qa-widget';
 
 interface SmartNoteDialogProps {
     patientId: string;
@@ -113,6 +114,7 @@ export function SmartNoteDialog({
     // Generation options
     const [noteType, setNoteType] = useState<NoteType>('review_consult');
     const [encounterDate, setEncounterDate] = useState(getMelbourneDate);
+    const [typedNotes, setTypedNotes] = useState('');
     const generateNote = true;
     const generateLetter = true;
     const [generatePatientSummary, setGeneratePatientSummary] = useState(false);
@@ -380,7 +382,8 @@ export function SmartNoteDialog({
                         pronouns: generateLetter ? pronouns : undefined
                     },
                     extractTasks: extractTasksRequested,
-                    model
+                    model,
+                    typedNotes: typedNotes.trim() || undefined
                 };
 
                 context = await prepareSmartNoteGeneration(options);
@@ -997,6 +1000,23 @@ export function SmartNoteDialog({
                         </div>
                     )}
 
+                    {/* Additional Typed Notes */}
+                    <div className="space-y-1.5">
+                        <Label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
+                            <PenLine className="h-3.5 w-3.5 text-indigo-600" />
+                            <span>Additional Typed Notes</span>
+                            <span className="text-[10px] font-normal text-slate-400">(appended to consult note)</span>
+                        </Label>
+                        <Textarea
+                            value={typedNotes}
+                            onChange={(e) => setTypedNotes(e.target.value)}
+                            placeholder="Type any quick observations or clinical notes to append to the generated consult note..."
+                            disabled={isPreparing || isGeneratingClinical}
+                            rows={3}
+                            className="text-xs resize-none"
+                        />
+                    </div>
+
                     {/* Date */}
                     <div className="space-y-2">
                         <Label htmlFor="encounter-date">Encounter Date</Label>
@@ -1029,9 +1049,12 @@ export function SmartNoteDialog({
                 </div>
 
                     <aside className="hidden lg:flex min-h-0 flex-col rounded-lg border border-slate-200 bg-slate-50/70 overflow-hidden">
-                        <div className="border-b bg-white px-4 py-3">
-                            <h3 className="font-semibold text-slate-800">Previous consult notes</h3>
-                            <p className="text-xs text-slate-500">Scroll here while recording. This does not interrupt the microphone.</p>
+                        <div className="border-b bg-white p-3 space-y-2">
+                            <div>
+                                <h3 className="font-semibold text-slate-800 text-sm">Patient Context & Prior Notes</h3>
+                                <p className="text-xs text-slate-500">Ask questions or scroll notes while recording.</p>
+                            </div>
+                            <PatientQaWidget patientId={patientId} patientName={patientName} embedded />
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 space-y-4">
                             {priorNotes.length === 0 ? (
