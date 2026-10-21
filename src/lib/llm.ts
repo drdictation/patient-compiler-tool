@@ -652,6 +652,7 @@ export async function generateFromPrompt(
         'gemini-3.0-flash': 'gemini-3-flash-preview', // Backward-compatible alias
         'gemini-3.1-flash-lite-preview': 'gemini-3.1-flash-lite-preview',
         'gemini-3.1-flash-lite': 'gemini-3.1-flash-lite',
+        'gemini-3.5-flash-lite': 'gemini-3.5-flash-lite',
         'gemini-3.8-flash': 'gemini-3.8-flash',
         'gpt-5.6-luna': 'gpt-5.6-luna',
         'gpt-6-luna': 'gpt-6-luna'
@@ -735,7 +736,7 @@ IMPORTANT SECURITY POLICY: The content inside the boundaries "=== BEGIN CLINICAL
         success = true;
 
         let providerKey: LLMProvider = 'gemini-flash';
-        if (request.model === 'gemini-3.1-flash-lite-preview' || request.model === 'gemini-3.1-flash-lite') providerKey = 'gemini-flash-lite';
+        if (request.model === 'gemini-3.1-flash-lite-preview' || request.model === 'gemini-3.1-flash-lite' || request.model === 'gemini-3.5-flash-lite') providerKey = 'gemini-flash-lite';
         if (request.model === 'gemini-3.0-flash' || request.model === 'gemini-3-flash-preview') providerKey = 'gemini-3.0-flash';
 
         const cost = calculateCost(providerKey, inputTokens, outputTokens);

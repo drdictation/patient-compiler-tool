@@ -668,7 +668,7 @@ export async function prepareSmartNoteGeneration(options: SmartNoteOptions): Pro
         throw new GenerationException('INVALID_INPUT', `Invalid noteType: ${options.noteType}`);
     }
 
-    const allowedModels = ['gemini-2.5-flash', 'gemini-3-flash-preview', 'gemini-3.0-flash', 'gemini-3.1-flash-lite-preview', 'gemini-3.1-flash-lite'];
+    const allowedModels = ['gemini-2.5-flash', 'gemini-3-flash-preview', 'gemini-3.0-flash', 'gemini-3.1-flash-lite-preview', 'gemini-3.1-flash-lite', 'gemini-3.5-flash-lite'];
     if (!allowedModels.includes(options.model)) {
         throw new GenerationException('INVALID_INPUT', `Invalid model: ${options.model}`);
     }

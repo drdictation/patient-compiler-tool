@@ -5,10 +5,11 @@ export type SmartNoteModel =
     | 'gemini-3.0-flash'
     | 'gemini-3.1-flash-lite-preview'
     | 'gemini-3.1-flash-lite'
+    | 'gemini-3.5-flash-lite'
     | 'gemini-3.8-flash'
     | 'gpt-5.6-luna'
     | 'gpt-6-luna';
 
-export const CONSULT_NOTE_MODEL: SmartNoteModel = 'gemini-3.1-flash-lite';
+export const CONSULT_NOTE_MODEL: SmartNoteModel = 'gemini-3.5-flash-lite';
 export const CONSULT_LETTER_MODEL: SmartNoteModel = 'gpt-6-luna';
-export const PATIENT_SUMMARY_MODEL: SmartNoteModel = 'gemini-3.1-flash-lite';
+export const PATIENT_SUMMARY_MODEL: SmartNoteModel = 'gemini-3.5-flash-lite';
