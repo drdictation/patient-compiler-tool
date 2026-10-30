@@ -136,50 +136,39 @@ export function TodayListDialog({
     // Classify candidate matches from parsed schedule item
     const matchScheduleEntries = useCallback((entries: SchedulePatientEntry[]): MatchResolution[] => {
         return entries.map(entry => {
-            const sLower = (entry.surname || '').toLowerCase().trim();
-            const fLower = (entry.firstName || '').toLowerCase().trim();
             const fullLower = (entry.fullDisplayName || '').toLowerCase().trim();
+            const normalizeName = (name: string) => name.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim().replace(/\s+/g, ' ');
+            const normalizedFullName = normalizeName(fullLower);
 
-            const candidates = patients.filter(p => {
-                const pNameLower = p.display_name.toLowerCase();
-                const pNormLower = p.normalized_name.toLowerCase();
+            const exactMatches = patients.filter(p =>
+                normalizeName(p.display_name) === normalizedFullName ||
+                normalizeName(p.normalized_name) === normalizedFullName
+            );
 
-                // Exact full name match
-                if (pNameLower === fullLower || pNormLower === fullLower) return true;
-
-                // Both surname and first name contained in candidate name
-                if (sLower && fLower && pNameLower.includes(sLower) && pNameLower.includes(fLower)) {
-                    return true;
-                }
-
-                // Match surname if 3+ chars and candidate has surname
-                if (sLower && sLower.length >= 3) {
-                    const words = pNormLower.split(/\s+/);
-                    if (words.some(w => w === sLower)) return true;
-                }
-
-                return false;
-            });
-
-            // Single exact match
-            if (candidates.length === 1) {
+            // Auto-select only an exact full-name match from the schedule.
+            if (exactMatches.length === 1) {
                 return {
                     entry,
                     status: 'exact',
-                    candidates,
-                    selectedPatientId: candidates[0].id
+                    candidates: exactMatches,
+                    selectedPatientId: exactMatches[0].id
                 };
             }
 
-            // Ambiguous multiple matches
-            if (candidates.length > 1) {
-                // If one candidate is an exact match on full name, prefer it
-                const exact = candidates.find(c => c.display_name.toLowerCase() === fullLower || c.normalized_name.toLowerCase() === fullLower);
+            // Duplicate exact records or partial-name matches need clinician review.
+            const surname = normalizeName(entry.surname || '').split(' ').filter(Boolean).at(-1) || '';
+            const firstName = normalizeName(entry.firstName || '').split(' ').filter(Boolean)[0] || '';
+            const candidates = exactMatches.length > 1 ? exactMatches : patients.filter(p => {
+                const words = new Set(normalizeName(`${p.display_name} ${p.normalized_name}`).split(' '));
+                return (surname && words.has(surname)) || (firstName && words.has(firstName));
+            });
+
+            if (candidates.length > 0) {
                 return {
                     entry,
                     status: 'ambiguous',
                     candidates,
-                    selectedPatientId: exact ? exact.id : null
+                    selectedPatientId: null
                 };
             }
 
@@ -656,4 +645,3 @@ export function TodayListDialog({
         </Dialog>
     );
 }
-

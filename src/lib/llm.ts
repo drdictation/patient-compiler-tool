@@ -44,14 +44,24 @@ interface ExtractionResponse {
     cost: number;
 }
 
-const PRICING = {
-    'gemini-flash': { input: 0.15, output: 1.25 }, // Gemini 2.5 Flash
-    'gemini-flash-lite': { input: 0.05, output: 0.20 }, // Gemini 3.1 Flash-Lite
-    'gemini-3.0-flash': { input: 0.25, output: 1.50 }, // Gemini 3.0 Flash (New)
-    'groq-gpt-oss': { input: 0.15, output: 0.60 }, // GPT OSS 120B
-    'groq-llama-4': { input: 0.20, output: 0.60 }, // Llama 4 Scout
-    'groq-llama-3': { input: 0.59, output: 0.79 }, // Llama 3 70B (approx standard)
+// Standard provider API pricing in USD per 1M tokens, checked 2026-10-30.
+const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+    'gemini-2.5-flash': { input: 0.30, output: 2.50 },
+    'gemini-3-flash-preview': { input: 0.50, output: 3.00 },
+    'gemini-3.1-flash-lite-preview': { input: 0.25, output: 1.50 },
+    'gemini-3.1-flash-lite': { input: 0.25, output: 1.50 },
+    'gemini-3.5-flash-lite': { input: 0.30, output: 2.50 },
+    'gemini-3.8-flash': { input: 0.75, output: 3.75 },
+    'gpt-6-luna': { input: 0.10, output: 0.50 },
+    'openai/gpt-oss-120b': { input: 0.15, output: 0.60 },
+    'meta-llama/llama-4-scout-17b-16e-instruct': { input: 0.11, output: 0.34 },
+    'llama3-70b-8192': { input: 0.59, output: 0.79 },
 };
+
+export function estimateAudioCost(model: string, durationSeconds: number): number | null {
+    if (model === 'whisper-large-v3') return (Math.max(0, durationSeconds) / 3600) * 0.111;
+    return null;
+}
 
 function getGroqModel(provider: LLMProvider): string {
     if (provider === 'groq-llama-3') return 'llama3-70b-8192';
@@ -60,14 +70,22 @@ function getGroqModel(provider: LLMProvider): string {
     return 'llama3-70b-8192';
 }
 
-function calculateCost(provider: LLMProvider, input: number, output: number): number {
-    const rates = PRICING[provider] || { input: 0, output: 0 };
+export function estimateLLMCost(model: string, input: number, output: number, at = Date.now()): number | null {
+    const rates = MODEL_PRICING[model];
+    if (!rates) return null;
+    if (model === 'gemini-3.8-flash' && at >= Date.UTC(2027, 0, 1)) {
+        return ((input * 1.50) + (output * 7.50)) / 1_000_000;
+    }
     return ((input * rates.input) + (output * rates.output)) / 1_000_000;
+}
+
+function calculateCost(_provider: LLMProvider, input: number, output: number, model: string): number {
+    return estimateLLMCost(model, input, output) ?? 0;
 }
 
 // ========== LOGGER UTILITY ==========
 
-interface LLMCallLog {
+export interface LLMCallLog {
     provider: string;
     model: string;
     purpose: string;
@@ -80,7 +98,7 @@ interface LLMCallLog {
     error_message?: string;
 }
 
-async function logLLMCall(log: LLMCallLog) {
+export async function logLLMCall(log: LLMCallLog) {
     try {
         await supabase.from('llm_calls').insert({
             provider: log.provider,
@@ -205,10 +223,10 @@ async function callGemini(
         const items = Array.isArray(results) ? results : ((results as any).issues || (results as any).investigations || (results as any).interventions || []);
         success = true;
 
-        const cost = calculateCost(provider as LLMProvider, inputTokens, outputTokens);
+        const cost = calculateCost(provider as LLMProvider, inputTokens, outputTokens, model);
 
         // Log successful call
-        void logLLMCall({
+        await logLLMCall({
             provider: 'gemini',
             model: model,
             purpose: purpose,
@@ -234,7 +252,7 @@ async function callGemini(
         errorMessage = e.message;
 
         // Log failed call
-        void logLLMCall({
+        await logLLMCall({
             provider: 'gemini',
             model: model,
             purpose: purpose,
@@ -298,10 +316,10 @@ async function callGroq(
         outputTokens = usage.completion_tokens || 0;
 
         const items = await parseGroqResponse(content);
-        const cost = calculateCost(provider as LLMProvider, inputTokens, outputTokens);
+        const cost = calculateCost(provider as LLMProvider, inputTokens, outputTokens, model);
 
         // Log success
-        void logLLMCall({
+        await logLLMCall({
             provider: 'groq',
             model: model,
             purpose: purpose,
@@ -322,7 +340,7 @@ async function callGroq(
             cost: cost
         };
     } catch (e: any) {
-        void logLLMCall({
+        await logLLMCall({
             provider: 'groq',
             model: model,
             purpose: purpose,
@@ -369,6 +387,7 @@ async function callOpenRouterGroq(
                         { role: 'system', content: systemPrompt },
                         { role: 'user', content: text }
                     ],
+                    usage: { include: true },
                     response_format: { type: 'json_object' }
                 })
             },
@@ -383,9 +402,11 @@ async function callOpenRouterGroq(
         const inputTokens = usage.prompt_tokens || 0;
         const outputTokens = usage.completion_tokens || 0;
         const items = await parseGroqResponse(content);
-        const cost = calculateCost(provider, inputTokens, outputTokens);
+        const cost = Number.isFinite(Number(usage.cost))
+            ? Number(usage.cost)
+            : calculateCost(provider, inputTokens, outputTokens, model);
 
-        void logLLMCall({
+        await logLLMCall({
             provider: 'openrouter',
             model,
             purpose: `${purpose}_fallback`,
@@ -406,7 +427,7 @@ async function callOpenRouterGroq(
             cost
         };
     } catch (fallbackError: any) {
-        void logLLMCall({
+        await logLLMCall({
             provider: 'openrouter',
             model,
             purpose: `${purpose}_fallback`,
@@ -735,13 +756,9 @@ IMPORTANT SECURITY POLICY: The content inside the boundaries "=== BEGIN CLINICAL
 
         success = true;
 
-        let providerKey: LLMProvider = 'gemini-flash';
-        if (request.model === 'gemini-3.1-flash-lite-preview' || request.model === 'gemini-3.1-flash-lite' || request.model === 'gemini-3.5-flash-lite') providerKey = 'gemini-flash-lite';
-        if (request.model === 'gemini-3.0-flash' || request.model === 'gemini-3-flash-preview') providerKey = 'gemini-3.0-flash';
+        const cost = estimateLLMCost(apiModel, inputTokens, outputTokens) ?? 0;
 
-        const cost = calculateCost(providerKey, inputTokens, outputTokens);
-
-        void logLLMCall({
+        await logLLMCall({
             provider: 'gemini',
             model: apiModel,
             purpose: request.purpose,
@@ -769,7 +786,7 @@ IMPORTANT SECURITY POLICY: The content inside the boundaries "=== BEGIN CLINICAL
         success = false;
         errorMessage = e.message;
 
-        void logLLMCall({
+        await logLLMCall({
             provider: 'gemini',
             model: apiModel,
             purpose: request.purpose,
@@ -832,9 +849,9 @@ async function generateFromOpenAI(request: GenerationRequest): Promise<SmartNote
             .find(item => item.type === 'output_text')?.text || '';
         const inputTokens = data.usage?.input_tokens || 0;
         const outputTokens = data.usage?.output_tokens || 0;
-        const costUsd = ((inputTokens * 1) + (outputTokens * 6)) / 1_000_000;
+        const costUsd = estimateLLMCost(request.model, inputTokens, outputTokens) ?? 0;
 
-        void logLLMCall({
+        await logLLMCall({
             provider: 'openai', model: request.model, purpose: request.purpose,
             patient_id: request.patientId, tokens_in: inputTokens, tokens_out: outputTokens,
             cost_usd: costUsd, latency_ms: Date.now() - startedAt, success: true
@@ -849,7 +866,7 @@ async function generateFromOpenAI(request: GenerationRequest): Promise<SmartNote
         };
     } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        void logLLMCall({
+        await logLLMCall({
             provider: 'openai', model: request.model, purpose: request.purpose,
             patient_id: request.patientId, tokens_in: 0, tokens_out: 0, cost_usd: 0,
             latency_ms: Date.now() - startedAt, success: false, error_message: errorMessage

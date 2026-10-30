@@ -44,6 +44,7 @@ interface Encounter {
 interface TimelineEntryProps {
     encounter: Encounter;
     isLast: boolean;
+    isLatest: boolean;
     patientId: string;
     patientName: string;
     allEncounters: Array<{ id: string; encounter_date: string }>;
@@ -71,15 +72,16 @@ function generateSummary(encounter: Encounter): string {
     // Default
     return 'Clinical encounter recorded.';
 }
-export function TimelineEntry({ encounter, isLast, patientId, patientName, allEncounters }: TimelineEntryProps) {
-    const [isExpanded, setIsExpanded] = useState(false);
+export function TimelineEntry({ encounter, isLast, isLatest, patientId, patientName, allEncounters }: TimelineEntryProps) {
+    const [isExpanded, setIsExpanded] = useState(isLatest);
     const [copiedNote, setCopiedNote] = useState(false);
     const [copiedLetter, setCopiedLetter] = useState(false);
+    const [copiedSummary, setCopiedSummary] = useState(false);
     const [copiedTranscript, setCopiedTranscript] = useState(false);
     const [isTranscriptExpanded, setIsTranscriptExpanded] = useState(false);
 
     const copyHiddenRef = useRef<HTMLDivElement>(null);
-    const [copyTarget, setCopyTarget] = useState<'note' | 'letter' | null>(null);
+    const [copyTarget, setCopyTarget] = useState<'note' | 'letter' | 'summary' | null>(null);
 
     const copyRichText = async (element: HTMLDivElement | null, plainTextFallback: string, label: string) => {
         if (element) {
@@ -192,6 +194,28 @@ export function TimelineEntry({ encounter, isLast, patientId, patientName, allEn
         }
     };
 
+    const handleCopySummary = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        const artifact = encounter.artifacts.find(a => a.artifact_type === 'PATIENT_SUMMARY');
+        const version = artifact?.versions.find(v => v.version_number === artifact.current_version) || artifact?.versions[0];
+        const content = version?.content || '';
+
+        if (content) {
+            setCopyTarget('summary');
+            setTimeout(async () => {
+                try {
+                    const success = await copyRichText(copyHiddenRef.current, content, 'Patient summary');
+                    if (success) {
+                        setCopiedSummary(true);
+                        setTimeout(() => setCopiedSummary(false), 2000);
+                    }
+                } finally {
+                    setCopyTarget(null);
+                }
+            }, 50);
+        }
+    };
+
     const handleCopyTranscript = async (e: React.MouseEvent) => {
         e.stopPropagation(); // Prevent card expansion
         const transcriptArtifact = encounter.artifacts.find(a => a.artifact_type === 'RAW_TRANSCRIPT');
@@ -233,6 +257,10 @@ export function TimelineEntry({ encounter, isLast, patientId, patientName, allEn
     const latestLetterVersion = letterArtifact?.versions.find(v => v.version_number === letterArtifact.current_version) || letterArtifact?.versions[0];
     const letterContent = latestLetterVersion?.content || '';
 
+    const summaryArtifact = encounter.artifacts.find(a => a.artifact_type === 'PATIENT_SUMMARY');
+    const latestSummaryVersion = summaryArtifact?.versions.find(v => v.version_number === summaryArtifact.current_version) || summaryArtifact?.versions[0];
+    const summaryContent = latestSummaryVersion?.content || '';
+
     if (!isExpanded) {
         // Collapsed view - compact card
         return (
@@ -250,7 +278,7 @@ export function TimelineEntry({ encounter, isLast, patientId, patientName, allEn
                     className="flex-1 mb-4 cursor-pointer hover:shadow-md transition-all border-slate-200 hover:border-indigo-200 group/card"
                     onClick={() => setIsExpanded(true)}
                 >
-                    <CardHeader className="py-3 px-4 flex flex-row items-start justify-between space-y-0">
+                    <CardHeader className="py-3 px-4 flex flex-col sm:flex-row items-start justify-between gap-3 space-y-0">
                         <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                                 <span className="font-semibold text-slate-800">{formattedDate}</span>
@@ -294,7 +322,7 @@ export function TimelineEntry({ encounter, isLast, patientId, patientName, allEn
                             </div>
                             <p className="text-sm text-slate-600 mt-1.5 line-clamp-2">{summary}</p>
                         </div>
-                        <div className="flex items-center gap-2 ml-2 flex-shrink-0">
+                        <div className="flex flex-wrap items-center gap-2 sm:ml-2">
                             {hasTranscript && (
                                 <Button
                                     variant="outline"
@@ -367,6 +395,24 @@ export function TimelineEntry({ encounter, isLast, patientId, patientName, allEn
                                     )}
                                 </Button>
                             )}
+                            {hasSummaries && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={handleCopySummary}
+                                    className={`h-7 px-2.5 gap-1.5 transition-all text-xs font-medium border-slate-200 shadow-sm ${
+                                        copiedSummary
+                                            ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-50 hover:text-green-700'
+                                            : 'bg-white hover:bg-slate-50 hover:text-indigo-600'
+                                    }`}
+                                >
+                                    {copiedSummary ? (
+                                        <><Check className="h-3.5 w-3.5 animate-pulse" /><span>Summary Copied</span></>
+                                    ) : (
+                                        <><FileText className="h-3.5 w-3.5 text-slate-400 group-hover/card:text-indigo-500" /><span>Copy Patient Summary</span></>
+                                    )}
+                                </Button>
+                            )}
                             <Button
                                 variant="ghost"
                                 size="sm"
@@ -383,7 +429,7 @@ export function TimelineEntry({ encounter, isLast, patientId, patientName, allEn
                     <div style={{ position: 'absolute', left: '-9999px', top: '-9999px', opacity: 0, pointerEvents: 'none' }}>
                         <div ref={copyHiddenRef}>
                             <ReactMarkdown>
-                                {copyTarget === 'note' ? noteContent : letterContent}
+                                {copyTarget === 'note' ? noteContent : copyTarget === 'letter' ? letterContent : summaryContent}
                             </ReactMarkdown>
                         </div>
                     </div>
@@ -434,6 +480,40 @@ export function TimelineEntry({ encounter, isLast, patientId, patientName, allEn
                 </CardHeader>
 
                 <CardContent className="py-4 px-4 space-y-4">
+                    <div className="flex flex-wrap gap-2" aria-label="Copy encounter documents">
+                        <Button variant="outline" size="sm" disabled={!letterContent} onClick={handleCopyLetter}>{letterContent ? (copiedLetter ? 'Letter Copied' : 'Copy Letter') : 'No letter'}</Button>
+                        <Button variant="outline" size="sm" disabled={!noteContent} onClick={handleCopyNote}>{noteContent ? (copiedNote ? 'Note Copied' : 'Copy Note') : 'No note'}</Button>
+                        <Button variant="outline" size="sm" disabled={!summaryContent} onClick={handleCopySummary}>{summaryContent ? (copiedSummary ? 'Summary Copied' : 'Copy Patient Summary') : 'No patient summary'}</Button>
+                    </div>
+                    {copyTarget && (
+                        <div style={{ position: 'absolute', left: '-9999px', top: '-9999px', opacity: 0, pointerEvents: 'none' }}>
+                            <div ref={copyHiddenRef}><ReactMarkdown>{copyTarget === 'note' ? noteContent : copyTarget === 'letter' ? letterContent : summaryContent}</ReactMarkdown></div>
+                        </div>
+                    )}
+                    {/* REFERRER LETTERS */}
+                    <div className="space-y-3">
+                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                            Referrer Letters
+                        </h4>
+                        <ArtifactSection
+                            encounterId={encounter.id}
+                            type="REFERRER_LETTER"
+                            initialArtifact={encounter.artifacts.find(a => a.artifact_type === 'REFERRER_LETTER')}
+                        />
+                    </div>
+
+                    {/* INTERNAL NOTES */}
+                    <details className="space-y-3">
+                        <summary className="cursor-pointer text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                            Internal Notes
+                        </summary>
+                        <ArtifactSection
+                            encounterId={encounter.id}
+                            type="INTERNAL_NOTE"
+                            initialArtifact={encounter.artifacts.find(a => a.artifact_type === 'INTERNAL_NOTE')}
+                        />
+                    </details>
+
                     {/* SOURCE DICTATIONS */}
                     {encounter.source_records.length > 0 && (
                         <div className="space-y-3">
@@ -466,30 +546,6 @@ export function TimelineEntry({ encounter, isLast, patientId, patientName, allEn
                             )}
                         </div>
                     )}
-
-                    {/* INTERNAL NOTES */}
-                    <div className="space-y-3">
-                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                            Internal Notes
-                        </h4>
-                        <ArtifactSection
-                            encounterId={encounter.id}
-                            type="INTERNAL_NOTE"
-                            initialArtifact={encounter.artifacts.find(a => a.artifact_type === 'INTERNAL_NOTE')}
-                        />
-                    </div>
-
-                    {/* REFERRER LETTERS */}
-                    <div className="space-y-3">
-                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                            Referrer Letters
-                        </h4>
-                        <ArtifactSection
-                            encounterId={encounter.id}
-                            type="REFERRER_LETTER"
-                            initialArtifact={encounter.artifacts.find(a => a.artifact_type === 'REFERRER_LETTER')}
-                        />
-                    </div>
 
                     {/* REFERRAL LETTERS (OUTBOUND) */}
                     <div className="space-y-3">

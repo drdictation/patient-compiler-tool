@@ -480,7 +480,7 @@ export async function getPatientTasks(patientId: string) {
 }
 
 // ============ SMART NOTE CREATION ============
-import { generateFromPrompt, SmartNoteGenerationResult, extractTasks } from '@/lib/llm';
+import { generateFromPrompt, SmartNoteGenerationResult, extractTasks, estimateLLMCost } from '@/lib/llm';
 import { SmartNoteModel, CONSULT_NOTE_MODEL, CONSULT_LETTER_MODEL, PATIENT_SUMMARY_MODEL } from '@/lib/model-config';
 import { PROMPTS } from '@/lib/prompts';
 import { resolveLetterPrompt, DETAILED_LETTER_DIRECTIVE } from '@/lib/prompts/registry';
@@ -1188,44 +1188,47 @@ export async function getLLMCostStats(period: 'day' | 'week' | 'month' = 'day') 
     const now = new Date();
     let startDate = new Date();
 
-    if (period === 'day') startDate.setHours(0, 0, 0, 0); // Start of today
+    if (period === 'day') {
+        const localDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Melbourne' }).format(now);
+        const utcMidnight = new Date(`${localDate}T00:00:00Z`);
+        const offset = new Intl.DateTimeFormat('en-US', { timeZone: 'Australia/Melbourne', timeZoneName: 'shortOffset' })
+            .formatToParts(utcMidnight).find(part => part.type === 'timeZoneName')?.value || 'GMT+0';
+        const [, hours = '0', minutes = '0'] = offset.match(/GMT([+-]\d{1,2})(?::(\d{2}))?/) || [];
+        const sign = offset.includes('-') ? -1 : 1;
+        startDate = new Date(utcMidnight.getTime() - sign * (Number(hours) * 60 + Number(minutes)) * 60_000);
+    }
     if (period === 'week') startDate.setDate(now.getDate() - 7);
     if (period === 'month') startDate.setDate(now.getDate() - 30);
 
     const periodLabel = period === 'day' ? 'Today' : (period === 'week' ? 'Last 7 Days' : 'Last 30 Days');
 
-    // 1. Optimized path: Single Postgres SQL aggregation RPC (0 table-scan row transfer)
-    try {
-        const { data: rpcData, error: rpcError } = await supabase
-            .rpc('get_llm_cost_summary', { start_date: startDate.toISOString() });
+    const rows: { provider: string; model: string; tokens_in: number; tokens_out: number; cost_usd: number; created_at: string }[] = [];
+    const pageSize = 1000;
+    for (let from = 0; ; from += pageSize) {
+        const { data, error } = await supabase
+            .from('llm_calls')
+            .select('provider, model, tokens_in, tokens_out, cost_usd, created_at')
+            .gte('created_at', startDate.toISOString())
+            .order('created_at', { ascending: true })
+            .range(from, from + pageSize - 1);
 
-        if (!rpcError && rpcData && rpcData.length > 0) {
-            const row = rpcData[0];
-            return {
-                totalCost: Number(row.total_cost || 0),
-                count: Number(row.call_count || 0),
-                periodLabel
-            };
+        if (error) {
+            console.error('Error fetching cost stats:', error);
+            return { totalCost: 0, count: 0, periodLabel: 'Error' };
         }
-    } catch {
-        // Fall back to table query if RPC is not yet deployed
+        rows.push(...(data || []));
+        if (!data || data.length < pageSize) break;
     }
 
-    // 2. Fallback path for backwards compatibility (projects only cost_usd)
-    const { data, error } = await supabase
-        .from('llm_calls')
-        .select('cost_usd')
-        .gte('created_at', startDate.toISOString());
-
-    if (error) {
-        console.error('Error fetching cost stats:', error);
-        return { totalCost: 0, count: 0, periodLabel: 'Error' };
-    }
-
-    const totalCost = data.reduce((acc, curr) => acc + (Number(curr.cost_usd) || 0), 0);
+    const totalCost = rows.reduce((sum, row) => {
+        const recalculated = row.provider === 'openrouter'
+            ? null
+            : estimateLLMCost(row.model, Number(row.tokens_in) || 0, Number(row.tokens_out) || 0, new Date(row.created_at).getTime());
+        return sum + (recalculated ?? (Number(row.cost_usd) || 0));
+    }, 0);
     return {
         totalCost,
-        count: data.length,
+        count: rows.length,
         periodLabel
     };
 }
@@ -2254,4 +2257,3 @@ ${input.summaryCard.proceduralActions || 'Standard protocol'}
         };
     }
 }
-

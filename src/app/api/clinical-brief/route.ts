@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { isAuthenticated } from '@/lib/auth';
+import { estimateLLMCost, logLLMCall } from '@/lib/llm';
 
 export const maxDuration = 60;
 
@@ -55,6 +56,10 @@ Keep the tone highly professional, precise, and clinical. Avoid fluff or introdu
         }
 
         const data = await res.json();
+        const usage = data.usageMetadata || {};
+        const tokensIn = usage.promptTokenCount || 0;
+        const tokensOut = usage.candidatesTokenCount || 0;
+        await logLLMCall({ provider: 'gemini', model: 'gemini-2.5-flash', purpose: 'clinical_brief', tokens_in: tokensIn, tokens_out: tokensOut, cost_usd: estimateLLMCost('gemini-2.5-flash', tokensIn, tokensOut) ?? 0, latency_ms: 0, success: true });
         const brief = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
         return NextResponse.json({

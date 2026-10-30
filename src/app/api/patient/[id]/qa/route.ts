@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { isAuthenticated } from '@/lib/auth';
 import { getPatientDetails, getPatientTimeline, getPatientIssues, getPatientInvestigations, getPatientInterventions, getPatientTasks } from '@/lib/data';
 import { fetchWithRetryAndTimeout } from '@/lib/llm-request';
+import { estimateLLMCost, logLLMCall } from '@/lib/llm';
 
 export async function POST(
     request: Request,
@@ -112,7 +113,22 @@ export async function POST(
         const data = await res.json() as {
             output_text?: string;
             output?: Array<{ content?: Array<{ type?: string; text?: string }> }>;
+            usage?: { input_tokens?: number; output_tokens?: number };
         };
+
+        const tokensIn = data.usage?.input_tokens || 0;
+        const tokensOut = data.usage?.output_tokens || 0;
+        await logLLMCall({
+            provider: 'openai',
+            model: 'gpt-6-luna',
+            purpose: 'patient_chart_qa',
+            patient_id: id,
+            tokens_in: tokensIn,
+            tokens_out: tokensOut,
+            cost_usd: estimateLLMCost('gpt-6-luna', tokensIn, tokensOut) ?? 0,
+            latency_ms: 0,
+            success: true
+        });
 
         const answer = data.output_text || data.output
             ?.flatMap(item => item.content || [])

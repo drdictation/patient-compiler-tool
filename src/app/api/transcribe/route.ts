@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { isAuthenticated } from '@/lib/auth';
 import { fetchWithRetryAndTimeout } from '@/lib/llm-request';
+import { estimateAudioCost, logLLMCall } from '@/lib/llm';
 
 export const maxDuration = 60; // 60 seconds maximum (Vercel hobby plan max is 60s, pro is 300s)
 
@@ -40,6 +41,7 @@ export async function POST(request: Request) {
         const groqFormData = new FormData();
         groqFormData.append('file', file, 'audio.webm');
         groqFormData.append('model', 'whisper-large-v3');
+        groqFormData.append('response_format', 'verbose_json');
 
         console.log(`[Transcription] Sending ${sizeMB.toFixed(2)}MB file to Groq...`);
 
@@ -58,6 +60,17 @@ export async function POST(request: Request) {
         });
 
         const data = await response.json();
+        const durationSeconds = Number(data.duration) || 0;
+        await logLLMCall({
+            provider: 'groq',
+            model: 'whisper-large-v3',
+            purpose: 'audio_transcription',
+            tokens_in: 0,
+            tokens_out: 0,
+            cost_usd: estimateAudioCost('whisper-large-v3', durationSeconds) ?? 0,
+            latency_ms: 0,
+            success: true
+        });
 
         return NextResponse.json({
             transcript: data.text || '',

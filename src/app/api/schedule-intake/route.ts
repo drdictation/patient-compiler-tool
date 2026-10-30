@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { isAuthenticated } from '@/lib/auth';
+import { estimateLLMCost, logLLMCall } from '@/lib/llm';
 
 export const maxDuration = 60;
 
@@ -112,6 +113,10 @@ export async function POST(request: Request) {
         }
 
         const data = await res.json();
+        const usage = data.usageMetadata || {};
+        const tokensIn = usage.promptTokenCount || 0;
+        const tokensOut = usage.candidatesTokenCount || 0;
+        await logLLMCall({ provider: 'gemini', model: 'gemini-2.5-flash', purpose: 'schedule_intake', tokens_in: tokensIn, tokens_out: tokensOut, cost_usd: estimateLLMCost('gemini-2.5-flash', tokensIn, tokensOut) ?? 0, latency_ms: 0, success: true });
         const rawJsonText = data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (!rawJsonText) {
             throw new Error('Gemini returned an empty candidate response');

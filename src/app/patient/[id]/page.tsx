@@ -1,11 +1,9 @@
 import Link from 'next/link';
-import { getPatientDetails, getPatientTimeline, getPatientIssues, getPatientInvestigations, getPatientInterventions, getPatientTasks } from '@/lib/data';
+import { getPatientDetails, getPatientTimeline } from '@/lib/data';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, ChevronRight } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { EditablePatientTitle } from '@/components/editable-patient-title';
-import { PatientSidebar } from '@/components/patient-sidebar';
 import { AddNoteDialog } from '@/components/add-note-dialog';
 import { SmartNoteDialog } from '@/components/smart-note-dialog';
 import { GlobalScanButton } from '@/components/global-scan-button';
@@ -22,13 +20,9 @@ export const dynamic = 'force-dynamic';
 
 export default async function PatientPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
-    const [patient, timeline, issues, investigations, interventions, tasks] = await Promise.all([
+    const [patient, timeline] = await Promise.all([
         getPatientDetails(id),
         getPatientTimeline(id),
-        getPatientIssues(id),
-        getPatientInvestigations(id),
-        getPatientInterventions(id),
-        getPatientTasks(id),
     ]);
 
     if (!patient) {
@@ -62,22 +56,6 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
         }] : [];
     });
 
-    // Calculate counts for sidebar
-    const activeIssuesCount = issues.filter(i =>
-        (i.lifecycle_state === 'accepted' || i.lifecycle_state === 'clinician_entered') &&
-        i.status === 'active'
-    ).length;
-
-    const upcomingRecallsCount = investigations.filter(i =>
-        (i.lifecycle_state === 'accepted' || i.lifecycle_state === 'clinician_entered') &&
-        i.next_due_date
-    ).length;
-
-    const ongoingInterventionsCount = interventions.filter(i =>
-        (i.lifecycle_state === 'accepted' || i.lifecycle_state === 'clinician_entered') &&
-        i.response === 'Ongoing'
-    ).length;
-
     return (
         <div className="w-full min-h-screen flex flex-col bg-gray-50/50">
             {/* Sticky Header */}
@@ -89,76 +67,36 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                     </Button>
                 </Link>
 
-                {/* Breadcrumbs */}
-                <nav className="hidden sm:flex items-center gap-1 text-sm text-muted-foreground mr-2">
-                    <Link href="/" className="hover:text-foreground transition-colors">
-                        Dashboard
-                    </Link>
-                    <ChevronRight className="h-3 w-3" />
-                    <span className="text-foreground font-medium truncate max-w-[200px]">
-                        {patient.display_name}
-                    </span>
-                </nav>
-
-                {/* Action buttons — left-aligned, visible on sm+ */}
-                <div className="hidden sm:flex items-center gap-2">
-                    <AddNoteDialog patientId={patient.id} />
+                <div className="min-w-0 flex-1 sm:flex-none sm:max-w-48">
+                    <EditablePatientTitle patientId={patient.id} initialName={patient.display_name} />
+                </div>
+                <div className="hidden sm:flex items-center gap-2 flex-wrap">
+                    <GlobalSearch />
+                    <AddPatientDialog />
                     <SmartNoteDialog patientId={patient.id} patientName={patient.display_name} mode="quick-record" priorNotes={priorNotes} />
                     <SmartNoteDialog patientId={patient.id} patientName={patient.display_name} mode="standard" priorNotes={priorNotes} />
-                    <CreateDocumentDialog
-                        patientId={patient.id}
-                        patientName={patient.display_name}
-                        encounters={timeline.map(e => ({ id: e.id, encounter_date: e.encounter_date }))}
-                    />
-                    <Separator orientation="vertical" className="h-6" />
-                    <AddPatientDialog />
-                    <GlobalSearch />
-                </div>
-
-                {/* Mobile: search + clean name (prevents accidental touch rename) */}
-                <div className="sm:hidden flex items-center gap-2 min-w-0 flex-1">
-                    <GlobalSearch />
-                    <h1 className="text-base font-bold text-slate-900 truncate">
-                        {patient.display_name}
-                    </h1>
-                </div>
-
-                {/* Secondary patient actions — pushed to the right on desktop */}
-                <div className="hidden sm:flex ml-auto items-center gap-2">
-                    <GlobalScanButton patientId={patient.id} />
                     <PatientQaWidget patientId={patient.id} patientName={patient.display_name} />
-                    <PatientInfoToggle patient={patient} />
-                    <EditablePatientTitle
-                        patientId={patient.id}
-                        initialName={patient.display_name}
-                    />
-                    {patient.identity_verified && (
-                        <Badge variant="outline" className="border-green-200 text-green-700 bg-green-50">
-                            Verified
-                        </Badge>
-                    )}
+                    <details className="relative">
+                        <summary className="cursor-pointer rounded-md border px-3 py-2 text-sm font-medium hover:bg-slate-50">More</summary>
+                        <div className="absolute right-0 top-full mt-2 z-30 flex min-w-56 flex-col items-stretch gap-2 rounded-lg border bg-white p-3 shadow-lg">
+                            <AddNoteDialog patientId={patient.id} />
+                            <CreateDocumentDialog patientId={patient.id} patientName={patient.display_name} encounters={timeline.map(e => ({ id: e.id, encounter_date: e.encounter_date }))} />
+                            <GlobalScanButton patientId={patient.id} />
+                            <PatientInfoToggle patient={patient} />
+                        </div>
+                    </details>
+                    {patient.identity_verified && <Badge variant="outline" className="border-green-200 text-green-700 bg-green-50">Verified</Badge>}
                 </div>
+                <div className="sm:hidden"><GlobalSearch /></div>
             </div>
 
             {/* Two-Column Layout */}
             <div className="flex-1 flex print:block">
-                {/* Sidebar - Hidden on mobile, visible on lg+ */}
-                <PatientSidebar
-                    patientName={patient.display_name}
-                    activeIssuesCount={activeIssuesCount}
-                    upcomingRecallsCount={upcomingRecallsCount}
-                    ongoingInterventionsCount={ongoingInterventionsCount}
-                />
-
                 {/* Main Content Area - Add bottom padding on mobile for action bar */}
                 <main className="flex-1 overflow-y-auto print:overflow-visible pb-24 md:pb-0">
                     <PatientContentView
                         patient={patient}
                         timeline={timeline}
-                        issues={issues}
-                        investigations={investigations}
-                        interventions={interventions}
-                        tasks={tasks}
                     />
                 </main>
             </div>
