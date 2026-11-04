@@ -104,33 +104,25 @@ export function TodayListDialog({
             return;
         }
 
-        const lines = pasteArea
-            .split('\n')
-            .map(l => l.trim().toLowerCase())
-            .filter(Boolean);
-
-        const newlyMatchedIds: string[] = [];
-
-        lines.forEach(line => {
-            const match = patients.find(p => {
-                const nameLower = p.display_name.toLowerCase();
-                const normLower = p.normalized_name.toLowerCase();
-                return nameLower.includes(line) || normLower.includes(line) || line.includes(nameLower);
-            });
-
-            if (match && !newlyMatchedIds.includes(match.id)) {
-                newlyMatchedIds.push(match.id);
-            }
+        const entries = pasteArea.split('\n').map(line => line.trim()).filter(Boolean).map(rawText => {
+            const parts = rawText.includes(',')
+                ? rawText.split(',').map(part => part.trim())
+                : null;
+            const fullDisplayName = parts ? `${parts.slice(1).join(' ')} ${parts[0]}`.trim() : rawText;
+            const words = fullDisplayName.split(/\s+/);
+            return {
+                rawText,
+                fullDisplayName,
+                firstName: words[0] || '',
+                surname: words.length > 1 ? words[words.length - 1] : '',
+            };
         });
-
-        if (newlyMatchedIds.length === 0) {
-            toast.error('No matching patients found. Please check spelling.');
-            return;
-        }
-
-        setCurrentIds(prev => Array.from(new Set([...prev, ...newlyMatchedIds])));
-        toast.success(`Matched ${newlyMatchedIds.length} patient(s) from pasted list!`);
+        const resolutions = matchScheduleEntries(entries);
+        setParsedSchedule(prev => [...prev, ...resolutions]);
+        const exactIds = resolutions.flatMap(r => r.selectedPatientId ? [r.selectedPatientId] : []);
+        setCurrentIds(prev => Array.from(new Set([...prev, ...exactIds])));
         setPasteArea('');
+        toast.success(`Review ${resolutions.length} patient(s) from pasted list`);
     };
 
     // Classify candidate matches from parsed schedule item
@@ -279,7 +271,7 @@ export function TodayListDialog({
             toast.success(`Created patient "${nameToCreate}"`);
 
             // Add newly created patient to selected IDs
-            setCurrentIds(prev => Array.from(new Set([...prev, id])));
+            setCurrentIds(prev => Array.from(new Set([...prev.filter(existingId => existingId !== item.selectedPatientId), id])));
 
             // Update row in parsedSchedule
             setParsedSchedule(prev => {
@@ -287,6 +279,7 @@ export function TodayListDialog({
                 next[index] = {
                     ...next[index],
                     status: 'exact',
+                    candidates: [{ id, display_name: nameToCreate, normalized_name: nameToCreate }],
                     selectedPatientId: id
                 };
                 return next;
@@ -451,7 +444,7 @@ export function TodayListDialog({
                                                         {item.status === 'ambiguous' && (
                                                             <span className="text-amber-800 flex items-center gap-1 font-medium">
                                                                 <AlertCircle className="h-3 w-3 text-amber-600" />
-                                                                {item.candidates.length} similar patients found - pick below:
+                                                                {item.candidates.length} similar patients found - choose one or create a new patient:
                                                             </span>
                                                         )}
                                                         {item.status === 'new' && (
@@ -483,12 +476,12 @@ export function TodayListDialog({
 
                                                 {/* Action Column */}
                                                 <div className="flex items-center gap-1.5 flex-shrink-0">
-                                                    {item.status === 'new' && (
+                                                    {(item.status === 'new' || item.status === 'ambiguous') && (
                                                         <Button
                                                             type="button"
                                                             size="sm"
                                                             variant="outline"
-                                                            disabled={isCreatingPatientId === item.entry.fullDisplayName}
+                                                            disabled={isCreatingPatientId !== null}
                                                             onClick={() => handleCreateNewPatient(idx)}
                                                             className="h-7 px-2.5 text-[11px] font-semibold bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1 rounded-md"
                                                         >
@@ -540,7 +533,7 @@ export function TodayListDialog({
                             className="w-full text-xs font-semibold gap-1.5 h-7 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200"
                         >
                             <Sparkles className="h-3.5 w-3.5 text-indigo-600" />
-                            Auto-Match Text Names
+                            Review Text Names
                         </Button>
                     </div>
 
