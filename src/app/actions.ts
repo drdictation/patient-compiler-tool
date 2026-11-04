@@ -872,6 +872,7 @@ export async function generateClinicalDocuments(context: PreparedSmartNoteContex
                         date: context.formattedDate,
                         documentType: 'referrer_letter',
                         templateType: template,
+                        letterType: type,
                         pronouns: context.outputs.pronouns
                     },
                     model: CONSULT_LETTER_MODEL,

@@ -1,8 +1,9 @@
-export type RequestOperationType = 'TRANSCRIPTION' | 'CLINICAL_GENERATION' | 'TASK_EXTRACTION';
+export type RequestOperationType = 'TRANSCRIPTION' | 'CLINICAL_GENERATION' | 'LETTER_GENERATION' | 'TASK_EXTRACTION';
 
 export const TIMEOUTS = {
     TRANSCRIPTION: 30000, // 30 seconds
     CLINICAL_GENERATION: 25000, // 25 seconds
+    LETTER_GENERATION: 120000, // 120 seconds for longer specialist letters
     TASK_EXTRACTION: 15000 // 15 seconds
 };
 

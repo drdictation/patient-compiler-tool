@@ -9,6 +9,7 @@ export interface GenerationRequest {
         date?: string;
         documentType: string; // e.g. "smart_note", "referrer_letter", "referral_letter", etc.
         templateType: string; // e.g. "general", "ibd", "functional", etc.
+        letterType?: string;
         pronouns?: string;
     };
     model: SmartNoteModel;

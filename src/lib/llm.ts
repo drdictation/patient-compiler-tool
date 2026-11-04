@@ -2,7 +2,7 @@
 import { supabase } from './supabase';
 import { fetchWithRetryAndTimeout, classifyError, BoundedRequestException } from './llm-request';
 import { GenerationRequest } from './prompts/types';
-import { CONSULT_LETTER_MODEL, SmartNoteModel } from './model-config';
+import { SmartNoteModel } from './model-config';
 
 export type { SmartNoteModel } from './model-config';
 export { CONSULT_NOTE_MODEL, CONSULT_LETTER_MODEL } from './model-config';
@@ -655,11 +655,21 @@ export interface SmartNoteGenerationResult {
 export async function generateFromPrompt(
     request: GenerationRequest
 ): Promise<SmartNoteGenerationResult> {
-    if (request.model === CONSULT_LETTER_MODEL || request.model === 'gpt-5.6-luna' || request.model === 'gpt-6-luna') {
+    if (request.metadata.documentType === 'referrer_letter') {
+        console.log(JSON.stringify({
+            level: 'info', message: 'Letter generation started', requestId: request.requestId || 'unknown',
+            model: request.model, purpose: request.purpose, letterType: request.metadata.letterType || 'unknown',
+            templateType: request.metadata.templateType, promptChars: request.systemInstructions.length,
+            transcriptChars: request.transcript.length
+        }));
+    }
+    if (request.model === 'gpt-5.6-luna' || request.model === 'gpt-6-luna') {
         try {
             return await generateFromOpenAI(request);
-        } catch (e: any) {
-            console.warn(`[LLM] ${request.model} failed (${e.message}), falling back to gemini-3.8-flash`);
+        } catch (error) {
+            if (request.metadata.documentType !== 'referrer_letter') throw error;
+            const message = error instanceof Error ? error.message : String(error);
+            console.warn(`[LLM] ${request.model} failed (${message}), falling back to gemini-3.8-flash. RequestId: ${request.requestId || 'unknown'}`);
             return await generateFromPrompt({ ...request, model: 'gemini-3.8-flash' });
         }
     }
@@ -730,7 +740,7 @@ IMPORTANT SECURITY POLICY: The content inside the boundaries "=== BEGIN CLINICAL
 
     try {
         const res = await fetchWithRetryAndTimeout({
-            operation: 'CLINICAL_GENERATION',
+            operation: request.metadata.documentType === 'referrer_letter' ? 'LETTER_GENERATION' : 'CLINICAL_GENERATION',
             url,
             init: {
                 method: 'POST',
@@ -824,7 +834,7 @@ async function generateFromOpenAI(request: GenerationRequest): Promise<SmartNote
     const startedAt = Date.now();
     try {
         const res = await fetchWithRetryAndTimeout({
-            operation: 'CLINICAL_GENERATION',
+            operation: request.metadata.documentType === 'referrer_letter' ? 'LETTER_GENERATION' : 'CLINICAL_GENERATION',
             url: 'https://api.openai.com/v1/responses',
             init: {
                 method: 'POST',
