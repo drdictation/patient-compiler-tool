@@ -115,8 +115,8 @@ export function SmartNoteDialog({
     const [noteType, setNoteType] = useState<NoteType>('review_consult');
     const [encounterDate, setEncounterDate] = useState(getMelbourneDate);
     const [typedNotes, setTypedNotes] = useState('');
-    const generateNote = true;
-    const generateLetter = true;
+    const [generateNote, setGenerateNote] = useState(true);
+    const [generateLetter, setGenerateLetter] = useState(true);
     const [generatePatientSummary, setGeneratePatientSummary] = useState(false);
     const [letterType, setLetterType] = useState<LetterType>('review');
     const [templateType, setTemplateType] = useState<TemplateType>('general');
@@ -318,6 +318,8 @@ export function SmartNoteDialog({
         setIsComplex(false);
         setPronouns('auto');
         setExtractTasksRequested(false);
+        setGenerateNote(true);
+        setGenerateLetter(true);
         setGeneratePatientSummary(false);
         setGenerationState({ transcript: 'idle', note: 'idle', letter: 'idle', patientSummary: 'idle', tasks: 'idle' });
         setRecordingDuration(0);
@@ -453,9 +455,9 @@ export function SmartNoteDialog({
 
                     setGenerationState(prev => ({
                         ...prev,
-                        note: clinicalResult.note ? (clinicalResult.note.status === 'success' ? 'success' : 'error') : 'idle',
-                        letter: clinicalResult.letter ? (clinicalResult.letter.status === 'success' ? 'success' : 'error') : 'idle',
-                        patientSummary: clinicalResult.patientSummary ? (clinicalResult.patientSummary.status === 'success' ? 'success' : 'error') : 'idle'
+                        note: clinicalResult.note?.status === 'success' ? 'success' : clinicalResult.note?.status === 'failed' ? 'error' : 'idle',
+                        letter: clinicalResult.letter?.status === 'success' ? 'success' : clinicalResult.letter?.status === 'failed' ? 'error' : 'idle',
+                        patientSummary: clinicalResult.patientSummary?.status === 'success' ? 'success' : clinicalResult.patientSummary?.status === 'failed' ? 'error' : 'idle'
                     }));
                 }
 
@@ -495,6 +497,14 @@ export function SmartNoteDialog({
                     console.warn('Letter validation warnings accepted automatically:', clinicalResult.letter.warnings);
                 }
 
+                if (errors.length > 0 && isMountedRef.current) {
+                    setGenerateNote(clinicalResult.note?.status === 'failed');
+                    setGenerateLetter(clinicalResult.letter?.status === 'failed');
+                    setGeneratePatientSummary(clinicalResult.patientSummary?.status === 'failed');
+                    setExtractTasksRequested(false);
+                    toast.info('Failed documents are selected for retry. Successful documents will not be regenerated.');
+                }
+
                 if (successArtifacts.length > 0) {
                     toast.success(`Created ${successArtifacts.join(' and ')} successfully`);
 
@@ -508,12 +518,16 @@ export function SmartNoteDialog({
 
                     // Do not block dialog close or router refresh for validation warnings
                     // or the separately-running optional task request.
-                    setTimeout(() => {
-                        if (isMountedRef.current) {
-                            handleOpenChange(false);
-                        }
+                    if (errors.length === 0) {
+                        setTimeout(() => {
+                            if (isMountedRef.current) {
+                                handleOpenChange(false);
+                            }
+                            router.refresh();
+                        }, 1500);
+                    } else {
                         router.refresh();
-                    }, 1500);
+                    }
                 }
             } catch (e: any) {
                 console.error('Clinical generation failed:', e);
@@ -532,6 +546,10 @@ export function SmartNoteDialog({
     };
 
     const transcribeAudio = async () => {
+        if (!generateNote && !generateLetter && !generatePatientSummary) {
+            toast.error('Select at least one document to generate');
+            return;
+        }
         if (audioSegmentsRef.current.length === 0) {
             toast.error('No audio recorded');
             return;
@@ -583,11 +601,7 @@ export function SmartNoteDialog({
             const combinedTranscript = [transcript.trim(), appendedTranscript].filter(Boolean).join('\n\n');
 
             setTranscript(combinedTranscript);
-            toast.success(
-                generatePatientSummary
-                    ? 'Audio transcribed. Generating note, letter, and patient summary...'
-                    : 'Audio transcribed. Generating note and letter...'
-            );
+            toast.success('Audio transcribed. Generating selected documents...');
             runSmartNoteGeneration(combinedTranscript);
         } catch (error: any) {
             console.error('[SmartNote] Transcription error:', error);
@@ -611,6 +625,10 @@ export function SmartNoteDialog({
     };
 
     const handleGenerate = () => {
+        if (!generateNote && !generateLetter && !generatePatientSummary) {
+            toast.error('Select at least one document to generate');
+            return;
+        }
         if (!transcript.trim()) {
             toast.error('Please enter or record a transcript');
             return;
@@ -781,17 +799,21 @@ export function SmartNoteDialog({
                             <div className="space-y-2">
                                 <Label>Outputs</Label>
                                 <div className="flex flex-wrap items-center gap-3 pt-1 text-sm text-muted-foreground">
-                                    <div className="flex items-center gap-1.5 text-slate-700">
+                                    <label className="inline-flex cursor-pointer items-center gap-1.5 text-slate-700">
+                                        <input type="checkbox" checked={generateNote} onChange={e => setGenerateNote(e.target.checked)} disabled={isPreparing || isGeneratingClinical || isTranscribing} className="accent-blue-600" />
                                         <FileText className="h-4 w-4 text-blue-600" />
                                         <span>Consult note</span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5 text-slate-700">
+                                    </label>
+                                    <label className="inline-flex cursor-pointer items-center gap-1.5 text-slate-700">
+                                        <input type="checkbox" checked={generateLetter} onChange={e => setGenerateLetter(e.target.checked)} disabled={isPreparing || isGeneratingClinical || isTranscribing} className="accent-purple-600" />
                                         <Mail className="h-4 w-4 text-purple-600" />
                                         <span>Letter</span>
-                                    </div>
+                                    </label>
                                     <button
                                         type="button"
                                         onClick={() => setGeneratePatientSummary(prev => !prev)}
+                                        disabled={isPreparing || isGeneratingClinical || isTranscribing}
+                                        aria-pressed={generatePatientSummary}
                                         className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
                                             generatePatientSummary
                                                 ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-xs'
@@ -1106,7 +1128,7 @@ export function SmartNoteDialog({
                         >
                             {extractTasksRequested ? 'Task extraction included' : 'Include task extraction'}
                         </Button>
-                        <Button onClick={handleGenerate} disabled={isPreparing || isGeneratingClinical || !transcript.trim()}>
+                        <Button onClick={handleGenerate} disabled={isPreparing || isGeneratingClinical || isTranscribing || !transcript.trim() || (!generateNote && !generateLetter && !generatePatientSummary)}>
                             {(isPreparing || isGeneratingClinical) && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                             {isPreparing ? 'Preparing...' : isGeneratingClinical ? 'Generating Documents...' : 'Generate Smart Note'}
                         </Button>

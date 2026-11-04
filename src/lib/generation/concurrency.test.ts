@@ -151,6 +151,24 @@ Dr. Smith
             assert.strictEqual(result.letter?.status, 'success');
             assert.strictEqual(result.note?.artifactId, 'art-id');
             assert.strictEqual(result.letter?.artifactId, 'art-id');
+
+            const versionsAfterBoth = callCount.artifact_version_insert;
+            const letterOnly = await generateClinicalDocuments({
+                ...context,
+                outputs: { ...context.outputs, generateNote: false, generateLetter: true }
+            });
+            assert.strictEqual(letterOnly.note?.status, 'skipped');
+            assert.strictEqual(letterOnly.letter?.status, 'success');
+            assert.strictEqual(callCount.artifact_version_insert - versionsAfterBoth, 1);
+
+            const versionsAfterLetter = callCount.artifact_version_insert;
+            const noteOnly = await generateClinicalDocuments({
+                ...context,
+                outputs: { ...context.outputs, generateNote: true, generateLetter: false }
+            });
+            assert.strictEqual(noteOnly.note?.status, 'success');
+            assert.strictEqual(noteOnly.letter?.status, 'skipped');
+            assert.strictEqual(callCount.artifact_version_insert - versionsAfterLetter, 1);
         } finally {
             globalThis.fetch = originalFetch;
         }
