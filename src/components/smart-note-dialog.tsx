@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
-import { Sparkles, Mic, Square, Loader2, Check, AlertCircle, FileText, Mail, UserCheck, HelpCircle, PenLine } from 'lucide-react';
+import { Sparkles, Mic, Square, Loader2, Check, AlertCircle, FileText, Mail, UserCheck, HelpCircle, PenLine, Copy } from 'lucide-react';
 import { prepareSmartNoteGeneration, generateClinicalDocuments, extractAndSaveTasks, SmartNoteOptions } from '@/app/actions';
 import { CONSULT_NOTE_MODEL } from '@/lib/model-config';
 import { toast } from 'sonner';
@@ -133,6 +133,20 @@ export function SmartNoteDialog({
         patientSummary: 'idle',
         tasks: 'idle'
     });
+    const [generatedDocs, setGeneratedDocs] = useState<{ note?: string; letter?: string; patientSummary?: string }>({});
+    const [copiedDoc, setCopiedDoc] = useState<'note' | 'letter' | 'patientSummary' | null>(null);
+
+    const handleCopyGenerated = async (docType: 'note' | 'letter' | 'patientSummary', content?: string) => {
+        if (!content) return;
+        try {
+            await navigator.clipboard.writeText(content);
+            setCopiedDoc(docType);
+            toast.success(`${docType === 'note' ? 'Note' : docType === 'letter' ? 'Letter' : 'Summary'} copied`);
+            setTimeout(() => setCopiedDoc(prev => (prev === docType ? null : prev)), 2000);
+        } catch {
+            toast.error('Failed to copy');
+        }
+    };
 
     // Cleanup on unmount only
     useEffect(() => {
@@ -322,6 +336,8 @@ export function SmartNoteDialog({
         setGenerateLetter(true);
         setGeneratePatientSummary(false);
         setGenerationState({ transcript: 'idle', note: 'idle', letter: 'idle', patientSummary: 'idle', tasks: 'idle' });
+        setGeneratedDocs({});
+        setCopiedDoc(null);
         setRecordingDuration(0);
         setAudioSizeMB(0);
         setIsRecording(false);
@@ -416,7 +432,6 @@ export function SmartNoteDialog({
             }
 
             // Task extraction is an optional, separate LLM request.
-            const clinicalPromise = generateClinicalDocuments(context);
             if (extractTasksRequested) {
                 extractAndSaveTasks(context)
                     .then((result) => {
@@ -446,61 +461,115 @@ export function SmartNoteDialog({
                     });
             }
 
-            // Await only the clinical document promise
+            // Fire independent parallel calls so fast docs (Note ~4s) are copyable immediately
+            // while slower docs (Letter ~15-42s) finish in the background.
+            setGeneratedDocs({});
+            const docPromises: Array<Promise<void>> = [];
+            const errors: string[] = [];
+            const successArtifacts: string[] = [];
+            const collected: { note?: string; letter?: string; summary?: string } = {};
+            const failedFlags = { note: false, letter: false, patientSummary: false };
+
+            if (generateNote) {
+                const noteCtx = {
+                    ...context,
+                    outputs: { ...context.outputs, generateNote: true, generateLetter: false, generatePatientSummary: false }
+                };
+                docPromises.push(
+                    generateClinicalDocuments(noteCtx).then((res) => {
+                        if (res.note?.status === 'success') {
+                            successArtifacts.push('Consult note');
+                            collected.note = res.note.content;
+                            if (isMountedRef.current) {
+                                setGeneratedDocs(prev => ({ ...prev, note: res.note?.content }));
+                                setGenerationState(prev => ({ ...prev, note: 'success' }));
+                            }
+                        } else {
+                            failedFlags.note = true;
+                            if (res.note?.error) errors.push(`Note generation failed: ${res.note.error.message}`);
+                            if (isMountedRef.current) setGenerationState(prev => ({ ...prev, note: 'error' }));
+                        }
+                    }).catch((err: any) => {
+                        failedFlags.note = true;
+                        errors.push(`Note generation failed: ${err?.message || 'Unknown error'}`);
+                        if (isMountedRef.current) setGenerationState(prev => ({ ...prev, note: 'error' }));
+                    })
+                );
+            }
+
+            if (generateLetter) {
+                const letterCtx = {
+                    ...context,
+                    outputs: { ...context.outputs, generateNote: false, generateLetter: true, generatePatientSummary: false }
+                };
+                docPromises.push(
+                    generateClinicalDocuments(letterCtx).then((res) => {
+                        if (res.letter?.status === 'success') {
+                            successArtifacts.push('Referrer letter');
+                            collected.letter = res.letter.content;
+                            if (res.letter.warnings?.length) {
+                                console.warn('Letter validation warnings accepted automatically:', res.letter.warnings);
+                            }
+                            if (isMountedRef.current) {
+                                setGeneratedDocs(prev => ({ ...prev, letter: res.letter?.content }));
+                                setGenerationState(prev => ({ ...prev, letter: 'success' }));
+                            }
+                        } else {
+                            failedFlags.letter = true;
+                            if (res.letter?.error) errors.push(`Letter generation failed: ${res.letter.error.message}`);
+                            if (isMountedRef.current) setGenerationState(prev => ({ ...prev, letter: 'error' }));
+                        }
+                    }).catch((err: any) => {
+                        failedFlags.letter = true;
+                        errors.push(`Letter generation failed: ${err?.message || 'Unknown error'}`);
+                        if (isMountedRef.current) setGenerationState(prev => ({ ...prev, letter: 'error' }));
+                    })
+                );
+            }
+
+            if (generatePatientSummary) {
+                const summaryCtx = {
+                    ...context,
+                    outputs: { ...context.outputs, generateNote: false, generateLetter: false, generatePatientSummary: true }
+                };
+                docPromises.push(
+                    generateClinicalDocuments(summaryCtx).then((res) => {
+                        if (res.patientSummary?.status === 'success') {
+                            successArtifacts.push('Patient summary');
+                            collected.summary = res.patientSummary.content;
+                            if (isMountedRef.current) {
+                                setGeneratedDocs(prev => ({ ...prev, patientSummary: res.patientSummary?.content }));
+                                setGenerationState(prev => ({ ...prev, patientSummary: 'success' }));
+                            }
+                        } else {
+                            failedFlags.patientSummary = true;
+                            if (res.patientSummary?.error) errors.push(`Patient summary generation failed: ${res.patientSummary.error.message}`);
+                            if (isMountedRef.current) setGenerationState(prev => ({ ...prev, patientSummary: 'error' }));
+                        }
+                    }).catch((err: any) => {
+                        failedFlags.patientSummary = true;
+                        errors.push(`Patient summary generation failed: ${err?.message || 'Unknown error'}`);
+                        if (isMountedRef.current) setGenerationState(prev => ({ ...prev, patientSummary: 'error' }));
+                    })
+                );
+            }
+
+            // Await all clinical document promises
             try {
-                const clinicalResult = await clinicalPromise;
+                await Promise.all(docPromises);
 
                 if (isMountedRef.current) {
                     setIsGeneratingClinical(false);
-
-                    setGenerationState(prev => ({
-                        ...prev,
-                        note: clinicalResult.note?.status === 'success' ? 'success' : clinicalResult.note?.status === 'failed' ? 'error' : 'idle',
-                        letter: clinicalResult.letter?.status === 'success' ? 'success' : clinicalResult.letter?.status === 'failed' ? 'error' : 'idle',
-                        patientSummary: clinicalResult.patientSummary?.status === 'success' ? 'success' : clinicalResult.patientSummary?.status === 'failed' ? 'error' : 'idle'
-                    }));
-                }
-
-                // Gather errors and success counts
-                const errors: string[] = [];
-                const successArtifacts: string[] = [];
-
-                if (clinicalResult.note) {
-                    if (clinicalResult.note.status === 'success') {
-                        successArtifacts.push('Consult note');
-                    } else if (clinicalResult.note.error) {
-                        errors.push(`Note generation failed: ${clinicalResult.note.error.message}`);
-                    }
-                }
-
-                if (clinicalResult.letter) {
-                    if (clinicalResult.letter.status === 'success') {
-                        successArtifacts.push('Referrer letter');
-                    } else if (clinicalResult.letter.error) {
-                        errors.push(`Letter generation failed: ${clinicalResult.letter.error.message}`);
-                    }
-                }
-
-                if (clinicalResult.patientSummary) {
-                    if (clinicalResult.patientSummary.status === 'success') {
-                        successArtifacts.push('Patient summary');
-                    } else if (clinicalResult.patientSummary.error) {
-                        errors.push(`Patient summary generation failed: ${clinicalResult.patientSummary.error.message}`);
-                    }
                 }
 
                 if (errors.length > 0) {
                     errors.forEach(err => toast.error(err));
                 }
 
-                if (clinicalResult.letter?.warnings && clinicalResult.letter.warnings.length > 0) {
-                    console.warn('Letter validation warnings accepted automatically:', clinicalResult.letter.warnings);
-                }
-
                 if (errors.length > 0 && isMountedRef.current) {
-                    setGenerateNote(clinicalResult.note?.status === 'failed');
-                    setGenerateLetter(clinicalResult.letter?.status === 'failed');
-                    setGeneratePatientSummary(clinicalResult.patientSummary?.status === 'failed');
+                    setGenerateNote(failedFlags.note);
+                    setGenerateLetter(failedFlags.letter);
+                    setGeneratePatientSummary(failedFlags.patientSummary);
                     setExtractTasksRequested(false);
                     toast.info('Failed documents are selected for retry. Successful documents will not be regenerated.');
                 }
@@ -509,15 +578,9 @@ export function SmartNoteDialog({
                     toast.success(`Created ${successArtifacts.join(' and ')} successfully`);
 
                     if (onGenerated) {
-                        onGenerated(patientId, {
-                            note: clinicalResult.note?.status === 'success' ? clinicalResult.note.content : undefined,
-                            letter: clinicalResult.letter?.status === 'success' ? clinicalResult.letter.content : undefined,
-                            summary: clinicalResult.patientSummary?.status === 'success' ? clinicalResult.patientSummary.content : undefined,
-                        });
+                        onGenerated(patientId, collected);
                     }
 
-                    // Do not block dialog close or router refresh for validation warnings
-                    // or the separately-running optional task request.
                     if (errors.length === 0) {
                         setTimeout(() => {
                             if (isMountedRef.current) {
@@ -1060,10 +1123,52 @@ export function SmartNoteDialog({
                             <div className="border rounded-lg p-4 bg-gray-50 space-y-2">
                                 <Label className="text-sm font-medium">Generation Progress</Label>
                                 <StatusIndicator status={generationState.transcript} label="Saving transcript" />
-                                <StatusIndicator status={generationState.note} label="Generating note" />
-                                <StatusIndicator status={generationState.letter} label="Generating letter" />
+                                <div className="flex items-center justify-between gap-2">
+                                    <StatusIndicator status={generationState.note} label="Generating note" />
+                                    {generationState.note === 'success' && generatedDocs.note && (
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-6 px-2 text-xs gap-1 bg-white"
+                                            onClick={() => handleCopyGenerated('note', generatedDocs.note)}
+                                        >
+                                            {copiedDoc === 'note' ? <Check className="h-3 w-3 text-green-600" /> : <Copy className="h-3 w-3" />}
+                                            {copiedDoc === 'note' ? 'Copied' : 'Copy Note'}
+                                        </Button>
+                                    )}
+                                </div>
+                                <div className="flex items-center justify-between gap-2">
+                                    <StatusIndicator status={generationState.letter} label="Generating letter" />
+                                    {generationState.letter === 'success' && generatedDocs.letter && (
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-6 px-2 text-xs gap-1 bg-white"
+                                            onClick={() => handleCopyGenerated('letter', generatedDocs.letter)}
+                                        >
+                                            {copiedDoc === 'letter' ? <Check className="h-3 w-3 text-green-600" /> : <Copy className="h-3 w-3" />}
+                                            {copiedDoc === 'letter' ? 'Copied' : 'Copy Letter'}
+                                        </Button>
+                                    )}
+                                </div>
                                 {generatePatientSummary && (
-                                    <StatusIndicator status={generationState.patientSummary} label="Generating patient summary" />
+                                    <div className="flex items-center justify-between gap-2">
+                                        <StatusIndicator status={generationState.patientSummary} label="Generating patient summary" />
+                                        {generationState.patientSummary === 'success' && generatedDocs.patientSummary && (
+                                            <Button
+                                                type="button"
+                                                size="sm"
+                                                variant="outline"
+                                                className="h-6 px-2 text-xs gap-1 bg-white"
+                                                onClick={() => handleCopyGenerated('patientSummary', generatedDocs.patientSummary)}
+                                            >
+                                                {copiedDoc === 'patientSummary' ? <Check className="h-3 w-3 text-green-600" /> : <Copy className="h-3 w-3" />}
+                                                {copiedDoc === 'patientSummary' ? 'Copied' : 'Copy Summary'}
+                                            </Button>
+                                        )}
+                                    </div>
                                 )}
                                 <StatusIndicator status={generationState.tasks} label="Extracting tasks" />
                             </div>

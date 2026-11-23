@@ -50,7 +50,41 @@ interface TimelineEntryProps {
     allEncounters: Array<{ id: string; encounter_date: string }>;
 }
 
+function extractFirstMeaningfulLine(markdown?: string): string | null {
+    if (!markdown) return null;
+    const lines = markdown.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    // Prefer line right after Summary / Impression / Plan heading
+    const headingIdx = lines.findIndex(l => /^(#{1,4}\s*|\*\*)(summary|impression|plan|current issues)/i.test(l));
+    if (headingIdx !== -1) {
+        for (let i = headingIdx + 1; i < lines.length; i++) {
+            const candidate = lines[i].replace(/^[-*•]\s+/, '').replace(/\*\*/g, '').trim();
+            if (candidate && !/^(#{1,4}\s+|\*\*[^*]+\*\*:?$)/.test(lines[i])) {
+                return candidate.length > 130 ? candidate.slice(0, 127).trim() + '...' : candidate;
+            }
+        }
+    }
+    // Fallback to first non-heading, non-salutation line
+    for (const line of lines) {
+        if (/^(#{1,4}\s+|dear\s+|re:|dob:|date:|thank you for)/i.test(line)) continue;
+        const clean = line.replace(/^[-*•]\s+/, '').replace(/\*\*/g, '').trim();
+        if (clean.length > 15) {
+            return clean.length > 130 ? clean.slice(0, 127).trim() + '...' : clean;
+        }
+    }
+    return null;
+}
+
 function generateSummary(encounter: Encounter): string {
+    const noteArt = encounter.artifacts.find(a => a.artifact_type === 'INTERNAL_NOTE');
+    const noteContent = noteArt?.versions.find(v => v.version_number === noteArt.current_version)?.content || noteArt?.versions[0]?.content;
+    const noteSummary = extractFirstMeaningfulLine(noteContent);
+    if (noteSummary) return noteSummary;
+
+    const letterArt = encounter.artifacts.find(a => a.artifact_type === 'REFERRER_LETTER');
+    const letterContent = letterArt?.versions.find(v => v.version_number === letterArt.current_version)?.content || letterArt?.versions[0]?.content;
+    const letterSummary = extractFirstMeaningfulLine(letterContent);
+    if (letterSummary) return letterSummary;
+
     // Try to get a summary from the first source record's AI formatted transcription
     const firstRecord = encounter.source_records[0];
     if (firstRecord?.ai_formatted_transcription) {

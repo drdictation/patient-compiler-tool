@@ -17,7 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { useDebounce } from 'use-debounce';
 import ReactMarkdown from 'react-markdown';
 import { getLatestPatientArtifact, getBatchPatientArtifacts, getTodayRoster, saveTodayRoster, PatientArtifactCacheItem } from '@/app/actions';
-import { isRosterExpired, formatRosterExpiryRemaining } from '@/lib/date-time';
+import { isRosterExpired, formatRosterExpiryRemaining, getMelbourneDate } from '@/lib/date-time';
 import { SmartNoteDialog } from '@/components/smart-note-dialog';
 import { TodayListDialog } from '@/components/today-list-dialog';
 import { ReferralIntakeDialog } from '@/components/referral-intake-dialog';
@@ -42,9 +42,18 @@ interface QuickCopyButtonProps {
     type: 'INTERNAL_NOTE' | 'REFERRER_LETTER' | 'PATIENT_SUMMARY';
     label: string;
     cachedContent?: string | null;
+    artifactDate?: string | null;
+    todayDate?: string;
 }
 
-function QuickCopyButton({ patientId, type, label, cachedContent }: QuickCopyButtonProps) {
+function formatShortDate(dateStr?: string | null): string {
+    if (!dateStr) return '';
+    const d = new Date(`${dateStr}T00:00:00`);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+}
+
+function QuickCopyButton({ patientId, type, label, cachedContent, artifactDate, todayDate }: QuickCopyButtonProps) {
     const [loading, setLoading] = useState(false);
     const [copied, setCopied] = useState(false);
     const [markdownContent, setMarkdownContent] = useState<string | null>(null);
@@ -52,6 +61,8 @@ function QuickCopyButton({ patientId, type, label, cachedContent }: QuickCopyBut
 
     // If cachedContent is explicitly null, we know no artifact exists for this patient
     const isAvailable = cachedContent === undefined || cachedContent !== null;
+    const isPriorVisit = Boolean(artifactDate && todayDate && artifactDate !== todayDate);
+    const shortDate = isPriorVisit ? formatShortDate(artifactDate) : '';
 
     const handleCopy = async (e: React.MouseEvent) => {
         e.stopPropagation(); // Prevent row navigation
@@ -168,7 +179,9 @@ function QuickCopyButton({ patientId, type, label, cachedContent }: QuickCopyBut
                 title={
                     !isAvailable 
                         ? `No recent ${label.toLowerCase()} found` 
-                        : `Copy Most Recent ${label}${cachedContent ? ' (Instant • 0ms)' : ''}`
+                        : isPriorVisit
+                            ? `Copy ${label} from ${shortDate} (prior visit)`
+                            : `Copy Today's ${label}${cachedContent ? ' (Instant • 0ms)' : ''}`
                 }
             >
                 {loading ? (
@@ -177,10 +190,15 @@ function QuickCopyButton({ patientId, type, label, cachedContent }: QuickCopyBut
                     <Check className="h-3.5 w-3.5 text-green-600" />
                 ) : (
                     <>
-                        <Icon className={`h-3.5 w-3.5 ${!isAvailable ? 'text-slate-300' : 'text-slate-400 group-hover:text-indigo-600'}`} />
+                        <Icon className={`h-3.5 w-3.5 ${!isAvailable ? 'text-slate-300' : isPriorVisit ? 'text-amber-500' : 'text-slate-400 group-hover:text-indigo-600'}`} />
                         <span>Copy {label}</span>
-                        {cachedContent && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" title="Pre-cached in memory" />
+                        {isPriorVisit && shortDate && (
+                            <span className="text-[10px] font-normal text-amber-700 bg-amber-50 border border-amber-200 px-1 rounded">
+                                {shortDate}
+                            </span>
+                        )}
+                        {cachedContent && !isPriorVisit && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" title="Generated today" />
                         )}
                     </>
                 )}
@@ -1035,6 +1053,11 @@ export function PatientList({
                                         const isTodayPatient = todayPatientIds.includes(patient.id);
                                         const cached = artifactCache[patient.id];
                                         const isExpanded = viewMode === 'today' && expandedPatientId === patient.id;
+                                        const todayMelbourne = getMelbourneDate();
+                                        const seenToday = Boolean(
+                                            cached?.internalNoteDate === todayMelbourne ||
+                                            cached?.referrerLetterDate === todayMelbourne
+                                        );
 
                                         return (
                                             <React.Fragment key={patient.id}>
@@ -1090,12 +1113,16 @@ export function PatientList({
                                                                     type="INTERNAL_NOTE"
                                                                     label="Note"
                                                                     cachedContent={cached?.internalNote}
+                                                                    artifactDate={cached?.internalNoteDate}
+                                                                    todayDate={todayMelbourne}
                                                                 />
                                                                 <QuickCopyButton
                                                                     patientId={patient.id}
                                                                     type="REFERRER_LETTER"
                                                                     label="Letter"
                                                                     cachedContent={cached?.referrerLetter}
+                                                                    artifactDate={cached?.referrerLetterDate}
+                                                                    todayDate={todayMelbourne}
                                                                 />
                                                                 {cached?.patientSummary && (
                                                                     <QuickCopyButton
@@ -1103,6 +1130,8 @@ export function PatientList({
                                                                         type="PATIENT_SUMMARY"
                                                                         label="Summary"
                                                                         cachedContent={cached?.patientSummary}
+                                                                        artifactDate={cached?.patientSummaryDate}
+                                                                        todayDate={todayMelbourne}
                                                                     />
                                                                 )}
                                                             </div>
@@ -1134,9 +1163,17 @@ export function PatientList({
                                                 </td>
                                                 <td className="py-3 px-4">
                                                     <div className="flex items-center gap-2">
-                                                        <span className="font-mono text-xs text-muted-foreground bg-slate-100 px-1.5 py-0.5 rounded">
-                                                            {patient.normalized_name}
-                                                        </span>
+                                                        {viewMode === 'today' && (
+                                                            seenToday ? (
+                                                                <span className="text-emerald-700 text-[11px] border border-emerald-200 bg-emerald-50 px-2 py-0.5 rounded-full font-medium">
+                                                                    Done today
+                                                                </span>
+                                                            ) : (
+                                                                <span className="text-slate-500 text-[11px] border border-slate-200 bg-slate-50 px-2 py-0.5 rounded-full font-medium">
+                                                                    Not seen
+                                                                </span>
+                                                            )
+                                                        )}
                                                         {patient.identity_verified && (
                                                             <span className="text-green-600 text-[10px] border border-green-200 bg-green-50 px-1.5 py-0 rounded-full font-medium">
                                                                 Verified
@@ -1153,16 +1190,6 @@ export function PatientList({
                                                             {new Date(patient.next_recall_date).toLocaleDateString()}
                                                         </span>
                                                     ) : '-'}
-                                                    {(patient.pending_task_count || 0) > 0 && (
-                                                        <Badge variant="default" className="ml-2 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] h-5 px-1.5">
-                                                            {patient.pending_task_count} Tasks
-                                                        </Badge>
-                                                    )}
-                                                    {(patient.suggested_items_count || 0) > 0 && (
-                                                        <Badge variant="secondary" className="ml-2 bg-amber-100 text-amber-800 hover:bg-amber-200 text-[10px] h-5 px-1.5 border-amber-200">
-                                                            {patient.suggested_items_count} Suggestions
-                                                        </Badge>
-                                                    )}
                                                 </td>
                                                 <td className="py-3 px-4 text-right">
                                                     <div className="flex justify-end items-center gap-2">

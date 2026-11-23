@@ -80,24 +80,28 @@ export default async function Dashboard(props: DashboardProps) {
     query = query.order('last_seen', { ascending: false, nullsFirst: false });
   }
 
-  const [{ data: patients, error }, { count: totalRecords }, { data: allPatientsSummary }, initialRoster] = await Promise.all([
+  const hasActiveFilter = Boolean(search || filterRecall || filterSuggested);
+
+  const [{ data: patients, error }, { count: totalRecords }, allSummaryRes, initialRoster] = await Promise.all([
     query,
     // `estimated` is much cheaper than exact full-table counts on larger datasets.
     supabase.from('source_record_cache').select('*', { count: 'estimated', head: true }),
-    // Full directory for Today's List matching & selection regardless of active dashboard filters
-    supabase.from('patient_summary').select(`
-      id,
-      display_name,
-      normalized_name,
-      identity_verified,
-      last_seen,
-      encounter_count,
-      record_count,
-      referring_doctor,
-      next_recall_date,
-      suggested_items_count,
-      pending_task_count
-    `).order('display_name'),
+    // Full directory for Today's List matching & selection only when main query is filtered
+    hasActiveFilter
+      ? supabase.from('patient_summary').select(`
+          id,
+          display_name,
+          normalized_name,
+          identity_verified,
+          last_seen,
+          encounter_count,
+          record_count,
+          referring_doctor,
+          next_recall_date,
+          suggested_items_count,
+          pending_task_count
+        `).order('display_name')
+      : Promise.resolve({ data: null }),
     getTodayRoster()
   ]);
 
@@ -113,7 +117,7 @@ export default async function Dashboard(props: DashboardProps) {
     );
   }
 
-  const allDirectoryPatients = allPatientsSummary || patients || [];
+  const allDirectoryPatients = allSummaryRes?.data || (patients ? [...patients].sort((a, b) => a.display_name.localeCompare(b.display_name)) : []);
 
   return (
     <div className="container mx-auto py-4 md:py-8 px-4">

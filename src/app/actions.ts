@@ -1553,8 +1553,11 @@ export async function suggestPatientForInboxItem(itemId: string): Promise<{
  */
 export interface PatientArtifactCacheItem {
     internalNote?: string | null;
+    internalNoteDate?: string | null;
     referrerLetter?: string | null;
+    referrerLetterDate?: string | null;
     patientSummary?: string | null;
+    patientSummaryDate?: string | null;
 }
 
 /**
@@ -1663,14 +1666,26 @@ export async function getBatchPatientArtifacts(
             result[pId] = item;
 
             if (art.artifact_type === 'INTERNAL_NOTE') {
-                if (!item.internalNote) item.internalNote = content;
+                if (!item.internalNote) {
+                    item.internalNote = content;
+                    item.internalNoteDate = enc.encounter_date;
+                }
             } else if (art.artifact_type === 'REFERRER_LETTER') {
-                if (!item.referrerLetter) item.referrerLetter = content;
+                if (!item.referrerLetter) {
+                    item.referrerLetter = content;
+                    item.referrerLetterDate = enc.encounter_date;
+                }
             } else if (art.artifact_type === 'REFERRAL_LETTER') {
                 // Secondary fallback if REFERRER_LETTER was not present
-                if (!item.referrerLetter) item.referrerLetter = content;
+                if (!item.referrerLetter) {
+                    item.referrerLetter = content;
+                    item.referrerLetterDate = enc.encounter_date;
+                }
             } else if (art.artifact_type === 'PATIENT_SUMMARY') {
-                if (!item.patientSummary) item.patientSummary = content;
+                if (!item.patientSummary) {
+                    item.patientSummary = content;
+                    item.patientSummaryDate = enc.encounter_date;
+                }
             }
         }
     } catch (e) {
