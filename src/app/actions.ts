@@ -25,7 +25,21 @@ export async function createPatient(displayName: string): Promise<{ id: string }
         .select('id')
         .single();
 
-    if (error) throw new Error(error.message);
+    if (error) {
+        // If patient with this normalized_name already exists, return their existing id
+        if (error.code === '23505') {
+            const { data: existing } = await supabase
+                .from('canonical_patient')
+                .select('id')
+                .eq('normalized_name', normalizedName)
+                .maybeSingle();
+            if (existing?.id) {
+                revalidatePath('/');
+                return { id: existing.id };
+            }
+        }
+        throw new Error(error.message);
+    }
 
     revalidatePath('/');
     return { id: data.id };
