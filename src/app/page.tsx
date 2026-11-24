@@ -23,6 +23,35 @@ interface DashboardProps {
   }>;
 }
 
+const PATIENT_SUMMARY_COLUMNS = `
+  id,
+  display_name,
+  normalized_name,
+  identity_verified,
+  last_seen,
+  encounter_count,
+  record_count,
+  referring_doctor,
+  next_recall_date,
+  suggested_items_count,
+  pending_task_count
+`;
+
+async function fetchAllPatientSummaries(
+  buildQuery: (from: number, to: number) => any
+) {
+  const PAGE_SIZE = 1000;
+  const rows: any[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await buildQuery(from, from + PAGE_SIZE - 1);
+    if (error) return { data: null, error };
+    if (!data || data.length === 0) break;
+    rows.push(...data);
+    if (data.length < PAGE_SIZE) break;
+  }
+  return { data: rows, error: null };
+}
+
 export default async function Dashboard(props: DashboardProps) {
   const searchParams = await props.searchParams;
   const search = searchParams.search || '';
@@ -30,79 +59,56 @@ export default async function Dashboard(props: DashboardProps) {
   const filterRecall = searchParams.filter_recall === 'true';
   const filterSuggested = searchParams.filter_suggested === 'true';
 
-  // Build Query
-  let query = supabase
-    .from('patient_summary')
-    .select(`
-      id,
-      display_name,
-      normalized_name,
-      identity_verified,
-      last_seen,
-      encounter_count,
-      record_count,
-      referring_doctor,
-      next_recall_date,
-      suggested_items_count,
-      pending_task_count
-    `);
+  const buildMainQuery = (from: number, to: number) => {
+    let query = supabase
+      .from('patient_summary')
+      .select(PATIENT_SUMMARY_COLUMNS);
 
-  // 1. Search (Name or Referring Doctor)
-  if (search) {
-    // Note: 'or' syntax in Supabase is allowing search across multiple columns
-    // We need to ensure text search configuration or simple ilike
-    query = query.or(`display_name.ilike.%${search}%,referring_doctor.ilike.%${search}%`);
-  }
+    if (search) {
+      query = query.or(`display_name.ilike.%${search}%,referring_doctor.ilike.%${search}%`);
+    }
 
-  // 2. Filters
-  if (filterRecall) {
-    const today = new Date().toISOString().split('T')[0];
-    const thirtyDays = new Date();
-    thirtyDays.setDate(thirtyDays.getDate() + 30);
-    const thirtyDaysStr = thirtyDays.toISOString().split('T')[0];
+    if (filterRecall) {
+      const today = new Date().toISOString().split('T')[0];
+      const thirtyDays = new Date();
+      thirtyDays.setDate(thirtyDays.getDate() + 30);
+      const thirtyDaysStr = thirtyDays.toISOString().split('T')[0];
+      query = query.gte('next_recall_date', today).lte('next_recall_date', thirtyDaysStr);
+    }
 
-    // next_recall_date between Today and 30 days from now
-    query = query.gte('next_recall_date', today).lte('next_recall_date', thirtyDaysStr);
-  }
+    if (filterSuggested) {
+      query = query.or('suggested_items_count.gt.0,pending_task_count.gt.0');
+    }
 
-  if (filterSuggested) {
-    query = query.or('suggested_items_count.gt.0,pending_task_count.gt.0');
-  }
+    if (sort === 'name') {
+      query = query.order('display_name', { ascending: true });
+    } else if (sort === 'recall') {
+      query = query.order('next_recall_date', { ascending: true, nullsFirst: false });
+    } else {
+      query = query.order('last_seen', { ascending: false, nullsFirst: false });
+    }
 
-  // 3. Sorting
-  if (sort === 'name') {
-    query = query.order('display_name', { ascending: true });
-  } else if (sort === 'recall') {
-    // Ascending because we want "Soonest" first, but NULLS LAST
-    query = query.order('next_recall_date', { ascending: true, nullsFirst: false });
-  } else {
-    // Default: Last Seen (Recent First, NULLS LAST)
-    query = query.order('last_seen', { ascending: false, nullsFirst: false });
-  }
-  query = query.limit(5000);
+    // Deterministic tie-breaker so pagination with .range() never skips or duplicates rows
+    return query.order('id', { ascending: true }).range(from, to);
+  };
 
   const hasActiveFilter = Boolean(search || filterRecall || filterSuggested);
 
   const [{ data: patients, error }, { count: totalRecords }, allSummaryRes, initialRoster] = await Promise.all([
-    query,
+    fetchAllPatientSummaries(buildMainQuery),
     // `estimated` is much cheaper than exact full-table counts on larger datasets.
     supabase.from('source_record_cache').select('*', { count: 'estimated', head: true }),
     // Full directory for Today's List matching & selection only when main query is filtered
     hasActiveFilter
-      ? supabase.from('patient_summary').select(`
-          id,
-          display_name,
-          normalized_name,
-          identity_verified,
-          last_seen,
-          encounter_count,
-          record_count,
-          referring_doctor,
-          next_recall_date,
-          suggested_items_count,
-          pending_task_count
-        `).order('display_name').limit(5000)
-      : Promise.resolve({ data: null }),
+      ? fetchAllPatientSummaries((from, to) =>
+          supabase
+            .from('patient_summary')
+            .select(PATIENT_SUMMARY_COLUMNS)
+            .order('display_name', { ascending: true })
+            .order('id', { ascending: true })
+            .range(from, to)
+        )
+      : Promise.resolve({ data: null, error: null }),
     getTodayRoster()
   ]);
 

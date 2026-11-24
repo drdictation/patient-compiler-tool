@@ -9,14 +9,23 @@ export async function GET() {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { data, error } = await supabase
-        .from('canonical_patient')
-        .select('id, display_name')
-        .order('display_name');
+    const PAGE_SIZE = 1000;
+    const patients: Array<{ id: string; display_name: string }> = [];
+    for (let from = 0; ; from += PAGE_SIZE) {
+        const { data, error } = await supabase
+            .from('canonical_patient')
+            .select('id, display_name')
+            .order('display_name', { ascending: true })
+            .order('id', { ascending: true })
+            .range(from, from + PAGE_SIZE - 1);
 
-    if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        if (error) {
+            return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+        if (!data || data.length === 0) break;
+        patients.push(...data);
+        if (data.length < PAGE_SIZE) break;
     }
 
-    return NextResponse.json({ patients: data || [] });
+    return NextResponse.json({ patients });
 }
