@@ -79,6 +79,7 @@ export default async function Dashboard(props: DashboardProps) {
     // Default: Last Seen (Recent First, NULLS LAST)
     query = query.order('last_seen', { ascending: false, nullsFirst: false });
   }
+  query = query.limit(5000);
 
   const hasActiveFilter = Boolean(search || filterRecall || filterSuggested);
 
@@ -100,7 +101,7 @@ export default async function Dashboard(props: DashboardProps) {
           next_recall_date,
           suggested_items_count,
           pending_task_count
-        `).order('display_name')
+        `).order('display_name').limit(5000)
       : Promise.resolve({ data: null }),
     getTodayRoster()
   ]);
