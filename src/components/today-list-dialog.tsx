@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -60,6 +61,7 @@ export function TodayListDialog({
     selectedIds,
     onSaveList
 }: TodayListDialogProps) {
+    const router = useRouter();
     const [currentIds, setCurrentIds] = useState<string[]>(selectedIds);
     const [pasteArea, setPasteArea] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
@@ -284,6 +286,7 @@ export function TodayListDialog({
                 };
                 return next;
             });
+            router.refresh();
         } catch (e: any) {
             toast.error(e.message || 'Failed to create patient');
         } finally {

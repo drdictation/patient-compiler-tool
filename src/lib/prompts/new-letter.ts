@@ -130,7 +130,7 @@ Use these as prompts for extraction only. Include details only if actually discu
 
 The Summary should communicate the main clinical conclusion and management plan without overstating diagnostic certainty or implying that deferred options have been commenced.
 
-I had the pleasure of conducting [an in-person/telehealth] consultation with {{PATIENT_NAME}}.
+I had the pleasure of [an in-person/a telehealth] review with {{PATIENT_NAME}}, thank you for referring them.
 
 **Symptoms and history of presenting complaint**
 [Provide a detailed, coherent clinical narrative.

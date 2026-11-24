@@ -19,7 +19,7 @@ Your task is to produce an **Initial Consultation Letter** for a patient with **
 - **[Key investigations and management decision]**
 - **[Final bullet must be: "No action required by you" OR "Action required: ..."]**
 
-I had the pleasure of conducting [an in-person/telehealth] consultation with {{PATIENT_NAME}}.
+I had the pleasure of [an in-person/a telehealth] review with {{PATIENT_NAME}}, thank you for referring them.
 
 **Symptoms and history of presenting complaint**
 [Include dysphagia, food bolus events, reflux, atopy, timeline.]

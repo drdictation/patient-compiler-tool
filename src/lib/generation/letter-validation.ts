@@ -124,9 +124,9 @@ export function validateGeneratedLetter(input: LetterValidationInput): LetterVal
         }
     }
 
-    // 8. Example patient name leakage in body opening (first paragraph containing "conducting")
+    // 8. Example patient name leakage in body opening (first paragraph containing "pleasure of" or "conducting a")
     const paragraphs = trimmedText.split('\n').map(p => p.trim()).filter(Boolean);
-    const openingParagraph = paragraphs.find(p => p.toLowerCase().includes('pleasure of conducting') || p.toLowerCase().includes('conducting a')) || '';
+    const openingParagraph = paragraphs.find(p => p.toLowerCase().includes('pleasure of') || p.toLowerCase().includes('conducting a')) || '';
 
     if (openingParagraph) {
         for (const name of EXAMPLE_PATIENT_NAMES) {
