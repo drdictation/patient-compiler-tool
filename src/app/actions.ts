@@ -3,8 +3,8 @@
 import { supabase } from '@/lib/supabase';
 import { revalidatePath } from 'next/cache';
 import { getMelbourneDate, ROSTER_EXPIRATION_HOURS } from '@/lib/date-time';
-import { PatientDetails, getPatientDetails } from '@/lib/data';
-import { ClinicalSnapshot } from '@/lib/clinical-snapshot';
+import { PatientDetails, getPatientDetails, getPatientTimeline } from '@/lib/data';
+import { ClinicalSnapshot, PriorNoteInput, buildPriorNotesFromTimeline } from '@/lib/clinical-snapshot';
 import { cleanPatientDisplayName, normalizePatientName } from '@/lib/patient-name';
 
 // Re-export patient name normalization helpers
@@ -86,6 +86,11 @@ export async function savePatientClinicalSnapshot(
 
     revalidatePath(`/patient/${patientId}`);
     return { success: true };
+}
+
+export async function getPatientPriorNotes(patientId: string): Promise<PriorNoteInput[]> {
+    const timeline = await getPatientTimeline(patientId);
+    return buildPriorNotesFromTimeline(timeline);
 }
 
 export async function updateIssueState(issueId: string, newState: string) {

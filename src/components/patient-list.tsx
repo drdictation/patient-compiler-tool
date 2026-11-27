@@ -17,8 +17,9 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useDebounce } from 'use-debounce';
 import ReactMarkdown from 'react-markdown';
-import { getLatestPatientArtifact, getBatchPatientArtifacts, getTodayRoster, saveTodayRoster, PatientArtifactCacheItem } from '@/app/actions';
+import { getLatestPatientArtifact, getBatchPatientArtifacts, getTodayRoster, saveTodayRoster, getPatientPriorNotes, PatientArtifactCacheItem } from '@/app/actions';
 import { isRosterExpired, formatRosterExpiryRemaining, getMelbourneDate } from '@/lib/date-time';
+import { PriorNoteInput } from '@/lib/clinical-snapshot';
 import { scanLetterRiskPhrases, RiskPhraseMatch } from '@/lib/generation/letter-risk-phrases';
 import { SmartNoteDialog } from '@/components/smart-note-dialog';
 import { TodayListDialog } from '@/components/today-list-dialog';
@@ -323,6 +324,7 @@ export function PatientList({
 
     // Managing Filters
     const [activeRecordPatient, setActiveRecordPatient] = useState<{ id: string; name: string } | null>(null);
+    const [activePriorNotes, setActivePriorNotes] = useState<PriorNoteInput[]>([]);
 
     // Initial server roster validation
     const hasValidInitialRoster = initialTodayPatientIds.length > 0 && initialTodayUpdatedAt && !isRosterExpired(initialTodayUpdatedAt);
@@ -342,7 +344,43 @@ export function PatientList({
     const [isReferralIntakeOpen, setIsReferralIntakeOpen] = useState(false);
     const [expandedPatientId, setExpandedPatientId] = useState<string | null>(null);
     const [artifactCache, setArtifactCache] = useState<Record<string, PatientArtifactCacheItem>>({});
+    const artifactCacheRef = useRef(artifactCache);
+    artifactCacheRef.current = artifactCache;
     const [isPreFetching, setIsPreFetching] = useState(false);
+
+    // Hydrate full prior-note history when opening the Record cockpit from home list
+    useEffect(() => {
+        if (!activeRecordPatient) {
+            setActivePriorNotes([]);
+            return;
+        }
+        const cached = artifactCacheRef.current[activeRecordPatient.id];
+        if (cached?.internalNote) {
+            setActivePriorNotes([{
+                id: 'prep-brief',
+                encounterDate: cached.internalNoteDate || 'Today',
+                label: 'Consult note',
+                content: cached.internalNote,
+            }]);
+        } else {
+            setActivePriorNotes([]);
+        }
+
+        let cancelled = false;
+        getPatientPriorNotes(activeRecordPatient.id)
+            .then((notes) => {
+                if (!cancelled && notes.length > 0) {
+                    setActivePriorNotes(notes);
+                }
+            })
+            .catch((err) => {
+                console.warn('[PatientList] Failed to hydrate full prior notes:', err);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [activeRecordPatient]);
 
     // Load Today's patient IDs and cached artifacts from localStorage and server roster on mount
     useEffect(() => {
@@ -1614,16 +1652,7 @@ export function PatientList({
                     patientId={activeRecordPatient.id}
                     patientName={activeRecordPatient.name}
                     mode="quick-record"
-                    priorNotes={
-                        artifactCache[activeRecordPatient.id]?.internalNote
-                            ? [{
-                                id: 'prep-brief',
-                                encounterDate: 'Today',
-                                label: 'Prep / Referral Note',
-                                content: artifactCache[activeRecordPatient.id].internalNote!
-                              }]
-                            : []
-                    }
+                    priorNotes={activePriorNotes}
                     open={!!activeRecordPatient}
                     onOpenChange={(isOpen) => {
                         if (!isOpen) setActiveRecordPatient(null);

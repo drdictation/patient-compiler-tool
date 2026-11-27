@@ -14,6 +14,7 @@ import { AddPatientDialog } from '@/components/add-patient-dialog';
 import { CreateDocumentDialog } from '@/components/create-document-dialog';
 import { PatientContentView } from '@/components/patient-content-view';
 import { PatientQaWidget } from '@/components/patient-qa-widget';
+import { buildPriorNotesFromTimeline } from '@/lib/clinical-snapshot';
 import { notFound } from 'next/navigation';
 
 export const dynamic = 'force-dynamic';
@@ -29,32 +30,7 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
         notFound();
     }
 
-    const priorNotes = timeline.flatMap(encounter => {
-        const latestContent = (artifactType: 'INTERNAL_NOTE' | 'PATIENT_SUMMARY' | 'REFERRER_LETTER') => {
-            const artifact = encounter.artifacts.find(item => item.artifact_type === artifactType);
-            const version = artifact?.versions.find(item => item.version_number === artifact.current_version) || artifact?.versions[0];
-            return version?.content;
-        };
-
-        const candidates = [
-            { label: 'Consult note', content: latestContent('INTERNAL_NOTE') },
-            { label: 'Encounter note', content: encounter.notes },
-            { label: 'Patient summary', content: latestContent('PATIENT_SUMMARY') },
-            ...encounter.source_records.map((record, index) => ({
-                label: encounter.source_records.length > 1 ? `Formatted dictation ${index + 1}` : 'Formatted dictation',
-                content: record.ai_formatted_transcription,
-            })),
-            { label: 'Referrer letter', content: latestContent('REFERRER_LETTER') },
-        ];
-
-        const selected = candidates.find(candidate => candidate.content?.trim());
-        return selected?.content ? [{
-            id: `${encounter.id}-${selected.label}`,
-            encounterDate: encounter.encounter_date,
-            label: selected.label,
-            content: selected.content,
-        }] : [];
-    });
+    const priorNotes = buildPriorNotesFromTimeline(timeline);
 
     return (
         <div className="w-full min-h-screen flex flex-col bg-gray-50/50">

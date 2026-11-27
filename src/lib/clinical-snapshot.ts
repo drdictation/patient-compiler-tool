@@ -204,6 +204,52 @@ export function slicePriorNotesBySubtitle(priorNotes: PriorNoteInput[]): SlicedC
 }
 
 /**
+ * Extracts one prioritized note per encounter from a patient's timeline
+ * in deterministic order: Internal Note > Encounter Note > Patient Summary >
+ * Formatted Dictation > Referrer Letter.
+ */
+export function buildPriorNotesFromTimeline(
+    timeline: Array<{
+        id: string;
+        encounter_date: string;
+        notes?: string;
+        source_records: Array<{ ai_formatted_transcription?: string }>;
+        artifacts: Array<{
+            artifact_type: string;
+            current_version: number;
+            versions: Array<{ version_number: number; content: string }>;
+        }>;
+    }>
+): PriorNoteInput[] {
+    return timeline.flatMap(encounter => {
+        const latestContent = (artifactType: 'INTERNAL_NOTE' | 'PATIENT_SUMMARY' | 'REFERRER_LETTER') => {
+            const artifact = encounter.artifacts.find(item => item.artifact_type === artifactType);
+            const version = artifact?.versions.find(item => item.version_number === artifact.current_version) || artifact?.versions[0];
+            return version?.content;
+        };
+
+        const candidates = [
+            { label: 'Consult note', content: latestContent('INTERNAL_NOTE') },
+            { label: 'Encounter note', content: encounter.notes },
+            { label: 'Patient summary', content: latestContent('PATIENT_SUMMARY') },
+            ...encounter.source_records.map((record, index) => ({
+                label: encounter.source_records.length > 1 ? `Formatted dictation ${index + 1}` : 'Formatted dictation',
+                content: record.ai_formatted_transcription,
+            })),
+            { label: 'Referrer letter', content: latestContent('REFERRER_LETTER') },
+        ];
+
+        const selected = candidates.find(candidate => candidate.content?.trim());
+        return selected?.content ? [{
+            id: `${encounter.id}-${selected.label}`,
+            encounterDate: encounter.encounter_date,
+            label: selected.label,
+            content: selected.content,
+        }] : [];
+    });
+}
+
+/**
  * Legacy helper retained for compatibility with earlier snapshot exports.
  */
 export function parseClinicalSnapshotFromNotes(priorNotes: PriorNoteInput[]): ClinicalSnapshot {
