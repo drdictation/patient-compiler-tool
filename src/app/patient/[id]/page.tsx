@@ -73,8 +73,8 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                 <div className="hidden sm:flex items-center gap-2 flex-wrap">
                     <GlobalSearch />
                     <AddPatientDialog />
-                    <SmartNoteDialog patientId={patient.id} patientName={patient.display_name} mode="quick-record" priorNotes={priorNotes} />
-                    <SmartNoteDialog patientId={patient.id} patientName={patient.display_name} mode="standard" priorNotes={priorNotes} />
+                    <SmartNoteDialog patientId={patient.id} patientName={patient.display_name} mode="quick-record" priorNotes={priorNotes} initialSnapshot={patient.clinical_snapshot} />
+                    <SmartNoteDialog patientId={patient.id} patientName={patient.display_name} mode="standard" priorNotes={priorNotes} initialSnapshot={patient.clinical_snapshot} />
                     <PatientQaWidget patientId={patient.id} patientName={patient.display_name} />
                     <details className="relative">
                         <summary className="cursor-pointer rounded-md border px-3 py-2 text-sm font-medium hover:bg-slate-50">More</summary>
@@ -97,6 +97,7 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                     <PatientContentView
                         patient={patient}
                         timeline={timeline}
+                        priorNotes={priorNotes}
                     />
                 </main>
             </div>

@@ -1,5 +1,8 @@
 
 import { supabase } from './supabase';
+import { ClinicalSnapshot } from './clinical-snapshot';
+
+export type { ClinicalSnapshot };
 
 export interface PatientDetails {
     id: string;
@@ -7,6 +10,7 @@ export interface PatientDetails {
     display_name: string;
     identity_verified: boolean;
     notes?: string;
+    clinical_snapshot?: ClinicalSnapshot | null;
     // Administrative
     date_of_birth?: string | null;
     medicare_number?: string | null;

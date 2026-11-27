@@ -98,3 +98,15 @@ This consultation requires a more comprehensive letter. You MUST:
 5. Do NOT become repetitive — each piece of information should appear once in its most relevant context.
 6. Factual-grounding rules always override the desire for detail. Completeness means capturing everything the transcript supports, not inventing additional content.
 `;
+
+/**
+ * Prevents the model from writing awkward meta-commentary about missing details
+ * or referencing the consultation/transcript/recording in GP letters.
+ */
+export const NO_META_OMISSION_DIRECTIVE = `
+OMIT MISSING INFORMATION SILENTLY (CRITICAL):
+- NEVER write meta-commentary explaining that something was not recorded, discussed, mentioned, reviewed, established, or available (e.g. NEVER write "the information was not recorded in the consultation", "no medication list was reviewed during the consultation", "doses were not established during our discussion", "the timing is unclear", "nature of these is not known", or "details were not available at the consultation").
+- NEVER refer to "the transcript", "the recording", "the dictation", "our discussion", or "during the consultation" when explaining gaps in the history.
+- If a detail (dose, timing, family history subtype, medication list, past test result, or physical examination) was not stated in the transcript, simply OMIT it naturally as a specialist clinician would when dictating a polished letter to a GP.
+- Only mention absence of physical examination when explicitly stating a telehealth or telephone consultation modality.
+`;

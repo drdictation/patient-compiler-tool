@@ -3,12 +3,15 @@
 import { Calendar, ClipboardCheck } from 'lucide-react';
 import { TimelineEntry } from '@/components/timeline-entry';
 import { TranscriptsPanel } from '@/components/transcripts-panel';
+import { ClinicalSnapshotCard } from '@/components/clinical-snapshot-card';
+import { PriorNoteInput } from '@/lib/clinical-snapshot';
 import { PatientDetails, getPatientTimeline } from '@/lib/data';
 import ReactMarkdown from 'react-markdown';
 
 interface PatientContentViewProps {
     patient: PatientDetails;
     timeline: Awaited<ReturnType<typeof getPatientTimeline>>;
+    priorNotes?: PriorNoteInput[];
 }
 
 function extractLastPlan(timeline: Awaited<ReturnType<typeof getPatientTimeline>>): { date: string; content: string } | null {
@@ -42,11 +45,18 @@ function extractLastPlan(timeline: Awaited<ReturnType<typeof getPatientTimeline>
 export function PatientContentView({
     patient,
     timeline,
+    priorNotes = [],
 }: PatientContentViewProps) {
     const lastPlan = extractLastPlan(timeline);
 
     return (
         <div className="max-w-5xl mx-auto px-4 lg:px-8 py-4 md:py-8 flex flex-col gap-6 md:gap-8 print:max-w-full print:px-0">
+            <ClinicalSnapshotCard
+                patientId={patient.id}
+                initialSnapshot={patient.clinical_snapshot}
+                priorNotes={priorNotes}
+                mode="page"
+            />
             {lastPlan && (
                 <section className="rounded-xl border border-indigo-200/80 bg-indigo-50/40 px-4 py-3 text-sm">
                     <div className="flex items-center justify-between mb-1.5">

@@ -1,14 +1,15 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
-import { Plus, Save, FileText, Mail, History, Copy, ScrollText } from 'lucide-react';
+import { Plus, Save, FileText, Mail, History, Copy, ScrollText, AlertTriangle, Edit3 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
+import { scanLetterRiskPhrases } from '@/lib/generation/letter-risk-phrases';
 
 interface Version {
     version_number: number;
@@ -28,6 +29,44 @@ interface ArtifactSectionProps {
     type: 'RAW_TRANSCRIPT' | 'INTERNAL_NOTE' | 'REFERRER_LETTER' | 'REFERRAL_LETTER' | 'PATIENT_SUMMARY';
     initialArtifact?: Artifact;
     readOnly?: boolean;
+}
+
+function escapeRegExp(str: string): string {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function renderHighlightedText(text: string, regex: RegExp | null): React.ReactNode {
+    if (!regex) return text;
+    const parts = text.split(regex);
+    if (parts.length <= 1) return text;
+    return parts.map((part, idx) =>
+        idx % 2 === 1 ? (
+            <mark
+                key={idx}
+                data-risk-highlight="true"
+                className="bg-red-200 text-red-950 font-semibold px-0.5 rounded"
+            >
+                {part}
+            </mark>
+        ) : (
+            part
+        )
+    );
+}
+
+function highlightChildren(children: React.ReactNode, regex: RegExp | null): React.ReactNode {
+    if (!regex) return children;
+    return React.Children.map(children, (child) => {
+        if (typeof child === 'string') {
+            return renderHighlightedText(child, regex);
+        }
+        if (React.isValidElement<{ children?: React.ReactNode }>(child) && child.props?.children) {
+            return React.cloneElement(child, {
+                children: highlightChildren(child.props.children, regex),
+            });
+        }
+        return child;
+    });
 }
 
 export function ArtifactSection({ encounterId, type, initialArtifact, readOnly = false }: ArtifactSectionProps) {
@@ -50,7 +89,7 @@ export function ArtifactSection({ encounterId, type, initialArtifact, readOnly =
             if (!res.ok) throw new Error('Failed to save');
 
             setIsEditing(false);
-            router.refresh(); // Refresh server data
+            router.refresh();
             toast.success('Saved successfully');
         } catch {
             toast.error('Error saving artifact');
@@ -61,13 +100,29 @@ export function ArtifactSection({ encounterId, type, initialArtifact, readOnly =
 
     const currentVersionContent = initialArtifact?.versions.find(v => v.version_number === initialArtifact.current_version)?.content;
     const hasContent = !!initialArtifact;
-    const label = type === 'RAW_TRANSCRIPT' ? 'Transcript' 
-        : type === 'INTERNAL_NOTE' ? 'Internal Note' 
+    const isLetterType = type === 'REFERRER_LETTER' || type === 'REFERRAL_LETTER';
+
+    const riskMatches = useMemo(() => {
+        if (!isLetterType || !currentVersionContent) return [];
+        return scanLetterRiskPhrases(currentVersionContent);
+    }, [isLetterType, currentVersionContent]);
+
+    const highlightRegex = useMemo(() => {
+        if (riskMatches.length === 0) return null;
+        const uniqueNeedles = Array.from(new Set(riskMatches.map(m => m.matchedText).filter(Boolean)));
+        if (uniqueNeedles.length === 0) return null;
+        // Sort longest first so longer phrases match before shorter subphrases
+        uniqueNeedles.sort((a, b) => b.length - a.length);
+        return new RegExp(`(${uniqueNeedles.map(escapeRegExp).join('|')})`, 'gi');
+    }, [riskMatches]);
+
+    const label = type === 'RAW_TRANSCRIPT' ? 'Transcript'
+        : type === 'INTERNAL_NOTE' ? 'Internal Note'
         : type === 'REFERRER_LETTER' ? 'Referrer Letter'
         : type === 'REFERRAL_LETTER' ? 'Referral Letter (Outbound)'
         : 'Patient Summary';
-    const Icon = type === 'RAW_TRANSCRIPT' ? ScrollText 
-        : type === 'INTERNAL_NOTE' ? FileText 
+    const Icon = type === 'RAW_TRANSCRIPT' ? ScrollText
+        : type === 'INTERNAL_NOTE' ? FileText
         : type === 'REFERRER_LETTER' ? Mail
         : type === 'REFERRAL_LETTER' ? Mail
         : FileText;
@@ -75,19 +130,21 @@ export function ArtifactSection({ encounterId, type, initialArtifact, readOnly =
     const handleCopy = async () => {
         if (contentRef.current) {
             try {
-                // Clone the content and inject inline styles for EMR compatibility
                 const clone = contentRef.current.cloneNode(true) as HTMLElement;
 
-                // Apply inline styles to all elements for EMR compatibility
+                // Strip inline risk-highlight <mark> tags so copied HTML stays clean for EMRs
+                clone.querySelectorAll('mark[data-risk-highlight]').forEach((mark) => {
+                    const textNode = document.createTextNode(mark.textContent || '');
+                    mark.parentNode?.replaceChild(textNode, mark);
+                });
+
                 const baseStyle = 'font-family: Arial, sans-serif; font-size: 10pt;';
                 clone.style.cssText = baseStyle;
 
-                // Style all paragraphs
                 clone.querySelectorAll('p').forEach((p) => {
                     (p as HTMLElement).style.cssText = `${baseStyle} margin: 6pt 0;`;
                 });
 
-                // Style all list items and lists with proper indentation
                 clone.querySelectorAll('ul, ol').forEach((list) => {
                     (list as HTMLElement).style.cssText = `${baseStyle} margin-left: 24pt; padding-left: 0; margin-top: 6pt; margin-bottom: 6pt;`;
                 });
@@ -96,12 +153,10 @@ export function ArtifactSection({ encounterId, type, initialArtifact, readOnly =
                     (li as HTMLElement).style.cssText = `${baseStyle} margin: 3pt 0;`;
                 });
 
-                // Style headings
                 clone.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach((h) => {
                     (h as HTMLElement).style.cssText = `${baseStyle} font-weight: bold; margin-top: 12pt; margin-bottom: 6pt;`;
                 });
 
-                // Style strong/bold
                 clone.querySelectorAll('strong, b').forEach((s) => {
                     (s as HTMLElement).style.cssText = `${baseStyle} font-weight: bold;`;
                 });
@@ -109,7 +164,6 @@ export function ArtifactSection({ encounterId, type, initialArtifact, readOnly =
                 const html = clone.innerHTML;
                 const text = contentRef.current.innerText;
 
-                // Create a ClipboardItem with both HTML and plain text
                 const blob = new Blob([`<div style="${baseStyle}">${html}</div>`], { type: 'text/html' });
                 const textBlob = new Blob([text], { type: 'text/plain' });
 
@@ -119,9 +173,12 @@ export function ArtifactSection({ encounterId, type, initialArtifact, readOnly =
                         'text/plain': textBlob,
                     })
                 ]);
-                toast.success(`${label} copied with formatting`);
+                if (riskMatches.length > 0) {
+                    toast.warning(`${label} copied — contains ${riskMatches.length} flagged phrase(s)`);
+                } else {
+                    toast.success(`${label} copied with formatting`);
+                }
             } catch {
-                // Fallback for browsers that don't support ClipboardItem
                 if (currentVersionContent) {
                     await navigator.clipboard.writeText(currentVersionContent);
                     toast.success(`${label} copied to clipboard (plain text)`);
@@ -130,33 +187,74 @@ export function ArtifactSection({ encounterId, type, initialArtifact, readOnly =
         }
     };
 
+    const isFlagged = riskMatches.length > 0;
+
     // READ MODE
     if (hasContent && !isEditing) {
         return (
-            <Card className="border-l-4 border-l-blue-500 shadow-sm hover:shadow-md transition-shadow">
+            <Card className={isFlagged
+                ? 'border-l-4 border-l-red-500 border-red-200 bg-red-50/30 shadow-sm hover:shadow-md transition-shadow'
+                : 'border-l-4 border-l-blue-500 shadow-sm hover:shadow-md transition-shadow'
+            }>
                 <CardHeader className="py-2 px-4 flex flex-row items-center justify-between space-y-0">
-                    <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-700">
+                    <CardTitle className={`text-sm font-semibold flex items-center gap-2 ${isFlagged ? 'text-red-800' : 'text-slate-700'}`}>
                         <Icon className="h-4 w-4" />
                         {label}
                         <Badge variant="secondary" className="text-[10px] h-5">v{initialArtifact.current_version}</Badge>
+                        {isFlagged && (
+                            <Badge variant="destructive" className="text-[10px] h-5 gap-1">
+                                <AlertTriangle className="h-3 w-3" />
+                                Review Flagged ({riskMatches.length})
+                            </Badge>
+                        )}
                     </CardTitle>
                     <div className="flex gap-1">
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={handleCopy} title="Copy to Clipboard">
-                            <Copy className="h-4 w-4 text-muted-foreground" />
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className={`h-7 w-7 p-0 ${isFlagged ? 'text-red-700 hover:bg-red-100' : ''}`}
+                            onClick={handleCopy}
+                            title="Copy to Clipboard"
+                        >
+                            <Copy className="h-4 w-4" />
                         </Button>
                         <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setShowHistory(!showHistory)} title="History">
                             <History className="h-4 w-4 text-muted-foreground" />
                         </Button>
                         {!readOnly && (
-                            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => {
-                                setContent(currentVersionContent || '');
-                                setIsEditing(true);
-                            }}>
-                                Edit
+                            <Button
+                                variant={isFlagged ? 'destructive' : 'ghost'}
+                                size="sm"
+                                className="h-7 text-xs gap-1"
+                                onClick={() => {
+                                    setContent(currentVersionContent || '');
+                                    setIsEditing(true);
+                                }}
+                            >
+                                {isFlagged && <Edit3 className="h-3 w-3" />}
+                                {isFlagged ? 'Edit to Fix' : 'Edit'}
                             </Button>
                         )}
                     </div>
                 </CardHeader>
+
+                {isFlagged && (
+                    <div className="mx-4 mb-1 rounded-lg border border-red-200 bg-red-100/70 px-3 py-2 text-xs text-red-900 space-y-1">
+                        <div className="font-semibold flex items-center gap-1.5">
+                            <AlertTriangle className="h-3.5 w-3.5 text-red-700 flex-shrink-0" />
+                            <span>Flagged phrases detected — review before sending to GP:</span>
+                        </div>
+                        <ul className="list-disc pl-5 space-y-0.5 text-red-800">
+                            {riskMatches.map((m, idx) => (
+                                <li key={idx}>
+                                    <span className="font-semibold">&ldquo;{m.matchedText}&rdquo;</span>
+                                    <span className="text-red-700"> — {m.label}</span>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+
                 <CardContent
                     ref={contentRef}
                     className="py-3 px-4 text-sm font-sans text-slate-800 markdown-content"
@@ -164,11 +262,19 @@ export function ArtifactSection({ encounterId, type, initialArtifact, readOnly =
                     {type === 'RAW_TRANSCRIPT' ? (
                         <p className="whitespace-pre-wrap font-serif">{currentVersionContent || ''}</p>
                     ) : (
-                        <ReactMarkdown>{currentVersionContent || ''}</ReactMarkdown>
+                        <ReactMarkdown
+                            components={highlightRegex ? {
+                                p: ({ children }) => <p>{highlightChildren(children, highlightRegex)}</p>,
+                                li: ({ children }) => <li>{highlightChildren(children, highlightRegex)}</li>,
+                                strong: ({ children }) => <strong>{highlightChildren(children, highlightRegex)}</strong>,
+                                em: ({ children }) => <em>{highlightChildren(children, highlightRegex)}</em>,
+                            } : undefined}
+                        >
+                            {currentVersionContent || ''}
+                        </ReactMarkdown>
                     )}
                 </CardContent>
 
-                {/* History View */}
                 {showHistory && (
                     <CardFooter className="flex-col items-start pt-0 pb-3 gap-2 border-t mt-2">
                         <p className="text-xs font-semibold text-muted-foreground mt-2">Version History</p>

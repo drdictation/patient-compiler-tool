@@ -1,5 +1,6 @@
 import { SmartNoteGenerationResult } from '../llm';
 import { EXAMPLE_PATIENT_NAMES } from '../prompts';
+import { scanLetterRiskPhrases } from './letter-risk-phrases';
 
 export interface LetterValidationInput {
     text: string;
@@ -244,6 +245,16 @@ export function validateGeneratedLetter(input: LetterValidationInput): LetterVal
         if (bulletCount > 8) {
             warnings.push(`Excessive number of bullet points (${bulletCount}) outside the Summary section.`);
         }
+    }
+
+    // 7. Risky AI meta-omission, transcript reference, or boilerplate phrases
+    const riskMatches = scanLetterRiskPhrases(text);
+    const seenLabels = new Set<string>();
+    for (const match of riskMatches) {
+        const key = `${match.ruleId}:${match.matchedText.toLowerCase()}`;
+        if (seenLabels.has(key)) continue;
+        seenLabels.add(key);
+        warnings.push(`${match.label}: "${match.matchedText}"`);
     }
 
     return {

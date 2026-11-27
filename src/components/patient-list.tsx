@@ -12,12 +12,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { PatientRowActions } from '@/components/patient-row-actions';
-import { Trash2, Merge, X, Search, Filter, FileText, MessageSquare, Loader2, Check, Mic, ClipboardList, Calendar, Zap, Plus, Sparkles, FileScan, ChevronDown, ChevronUp, Activity, ExternalLink, RefreshCw, Clock } from 'lucide-react';
+import { Trash2, Merge, X, Search, Filter, FileText, MessageSquare, Loader2, Check, Mic, ClipboardList, Calendar, Zap, Plus, Sparkles, FileScan, ChevronDown, ChevronUp, Activity, ExternalLink, RefreshCw, Clock, AlertTriangle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useDebounce } from 'use-debounce';
 import ReactMarkdown from 'react-markdown';
 import { getLatestPatientArtifact, getBatchPatientArtifacts, getTodayRoster, saveTodayRoster, PatientArtifactCacheItem } from '@/app/actions';
 import { isRosterExpired, formatRosterExpiryRemaining, getMelbourneDate } from '@/lib/date-time';
+import { scanLetterRiskPhrases, RiskPhraseMatch } from '@/lib/generation/letter-risk-phrases';
 import { SmartNoteDialog } from '@/components/smart-note-dialog';
 import { TodayListDialog } from '@/components/today-list-dialog';
 import { ReferralIntakeDialog } from '@/components/referral-intake-dialog';
@@ -54,15 +56,89 @@ function formatShortDate(dateStr?: string | null): string {
 }
 
 function QuickCopyButton({ patientId, type, label, cachedContent, artifactDate, todayDate }: QuickCopyButtonProps) {
+    const router = useRouter();
     const [loading, setLoading] = useState(false);
     const [copied, setCopied] = useState(false);
     const [markdownContent, setMarkdownContent] = useState<string | null>(null);
+    const [gateState, setGateState] = useState<{ content: string; matches: RiskPhraseMatch[] } | null>(null);
     const hiddenRef = useRef<HTMLDivElement>(null);
 
     // If cachedContent is explicitly null, we know no artifact exists for this patient
     const isAvailable = cachedContent === undefined || cachedContent !== null;
     const isPriorVisit = Boolean(artifactDate && todayDate && artifactDate !== todayDate);
     const shortDate = isPriorVisit ? formatShortDate(artifactDate) : '';
+    const isLetter = type === 'REFERRER_LETTER';
+
+    const cachedRiskMatches = useMemo(() => {
+        if (!isLetter || !cachedContent) return [];
+        return scanLetterRiskPhrases(cachedContent);
+    }, [isLetter, cachedContent]);
+    const isFlagged = cachedRiskMatches.length > 0;
+
+    const performCopy = (content: string, warnFlagged = false) => {
+        setLoading(true);
+        setMarkdownContent(content);
+
+        setTimeout(async () => {
+            if (hiddenRef.current) {
+                try {
+                    const element = hiddenRef.current;
+                    const clone = element.cloneNode(true) as HTMLElement;
+                    const baseStyle = 'font-family: Arial, sans-serif; font-size: 10pt;';
+                    clone.style.cssText = baseStyle;
+
+                    clone.querySelectorAll('p').forEach((p) => {
+                        (p as HTMLElement).style.cssText = `${baseStyle} margin: 6pt 0;`;
+                    });
+
+                    clone.querySelectorAll('ul, ol').forEach((list) => {
+                        (list as HTMLElement).style.cssText = `${baseStyle} margin-left: 24pt; padding-left: 0; margin-top: 6pt; margin-bottom: 6pt;`;
+                    });
+
+                    clone.querySelectorAll('li').forEach((li) => {
+                        (li as HTMLElement).style.cssText = `${baseStyle} margin: 3pt 0;`;
+                    });
+
+                    clone.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach((h) => {
+                        (h as HTMLElement).style.cssText = `${baseStyle} font-weight: bold; margin-top: 12pt; margin-bottom: 6pt;`;
+                    });
+
+                    clone.querySelectorAll('strong, b').forEach((s) => {
+                        (s as HTMLElement).style.cssText = `${baseStyle} font-weight: bold;`;
+                    });
+
+                    const html = clone.innerHTML;
+                    const text = element.innerText;
+
+                    const blob = new Blob([`<div style="${baseStyle}">${html}</div>`], { type: 'text/html' });
+                    const textBlob = new Blob([text], { type: 'text/plain' });
+
+                    await navigator.clipboard.write([
+                        new ClipboardItem({
+                            'text/html': blob,
+                            'text/plain': textBlob,
+                        })
+                    ]);
+                    if (warnFlagged) {
+                        toast.warning(`Copied flagged ${label.toLowerCase()} — remember to review highlighted phrase(s)`);
+                    } else {
+                        toast.success(`Recent ${label.toLowerCase()} copied with formatting`);
+                    }
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                } catch (err) {
+                    console.error('[QuickCopy] Rich copy failed, falling back:', err);
+                    await navigator.clipboard.writeText(content);
+                    toast.success(`Recent ${label.toLowerCase()} copied as plain text`);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                } finally {
+                    setMarkdownContent(null);
+                }
+            }
+            setLoading(false);
+        }, 50);
+    };
 
     const handleCopy = async (e: React.MouseEvent) => {
         e.stopPropagation(); // Prevent row navigation
@@ -89,77 +165,22 @@ function QuickCopyButton({ patientId, type, label, cachedContent, artifactDate, 
             return;
         }
 
-        setLoading(true);
-        // Set the markdown content to render it in the hidden container
-        setMarkdownContent(content);
-
-        // Wait a tick for React to render the hidden container
-        setTimeout(async () => {
-            if (hiddenRef.current) {
-                try {
-                    const element = hiddenRef.current;
-                    const clone = element.cloneNode(true) as HTMLElement;
-                    const baseStyle = 'font-family: Arial, sans-serif; font-size: 10pt;';
-                    clone.style.cssText = baseStyle;
-
-                    // Style all paragraphs
-                    clone.querySelectorAll('p').forEach((p) => {
-                        (p as HTMLElement).style.cssText = `${baseStyle} margin: 6pt 0;`;
-                    });
-
-                    // Style all list items and lists with proper indentation
-                    clone.querySelectorAll('ul, ol').forEach((list) => {
-                        (list as HTMLElement).style.cssText = `${baseStyle} margin-left: 24pt; padding-left: 0; margin-top: 6pt; margin-bottom: 6pt;`;
-                    });
-
-                    clone.querySelectorAll('li').forEach((li) => {
-                        (li as HTMLElement).style.cssText = `${baseStyle} margin: 3pt 0;`;
-                    });
-
-                    // Style headings
-                    clone.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach((h) => {
-                        (h as HTMLElement).style.cssText = `${baseStyle} font-weight: bold; margin-top: 12pt; margin-bottom: 6pt;`;
-                    });
-
-                    // Style strong/bold
-                    clone.querySelectorAll('strong, b').forEach((s) => {
-                        (s as HTMLElement).style.cssText = `${baseStyle} font-weight: bold;`;
-                    });
-
-                    const html = clone.innerHTML;
-                    const text = element.innerText;
-
-                    const blob = new Blob([`<div style="${baseStyle}">${html}</div>`], { type: 'text/html' });
-                    const textBlob = new Blob([text], { type: 'text/plain' });
-
-                    await navigator.clipboard.write([
-                        new ClipboardItem({
-                            'text/html': blob,
-                            'text/plain': textBlob,
-                        })
-                    ]);
-                    toast.success(`Recent ${label.toLowerCase()} copied with formatting`);
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 2000);
-                } catch (err) {
-                    console.error('[QuickCopy] Rich copy failed, falling back:', err);
-                    // Fallback to plain text
-                    await navigator.clipboard.writeText(content as string);
-                    toast.success(`Recent ${label.toLowerCase()} copied as plain text`);
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 2000);
-                } finally {
-                    setMarkdownContent(null);
-                }
+        if (isLetter) {
+            const matches = scanLetterRiskPhrases(content);
+            if (matches.length > 0) {
+                setLoading(false);
+                setGateState({ content, matches });
+                return;
             }
-            setLoading(false);
-        }, 50);
+        }
+
+        performCopy(content);
     };
 
-    const Icon = type === 'INTERNAL_NOTE' 
-        ? FileText 
-        : type === 'REFERRER_LETTER' 
-            ? MessageSquare 
+    const Icon = type === 'INTERNAL_NOTE'
+        ? FileText
+        : type === 'REFERRER_LETTER'
+            ? MessageSquare
             : Sparkles;
 
     return (
@@ -167,21 +188,25 @@ function QuickCopyButton({ patientId, type, label, cachedContent, artifactDate, 
             <Button
                 variant="outline"
                 size="sm"
-                className={`h-7 px-2.5 gap-1.5 transition-all text-xs font-medium border-slate-200 shadow-sm ${
-                    copied 
-                        ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-50 hover:text-green-700' 
+                className={`h-7 px-2.5 gap-1.5 transition-all text-xs font-medium shadow-sm ${
+                    copied
+                        ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-50 hover:text-green-700'
                         : !isAvailable
-                            ? 'opacity-40 bg-slate-50 text-slate-400 cursor-not-allowed hover:bg-slate-50 hover:text-slate-400'
-                            : 'bg-white hover:bg-slate-50 hover:text-indigo-600'
+                            ? 'opacity-40 bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed hover:bg-slate-50 hover:text-slate-400'
+                            : isFlagged
+                                ? 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100 hover:text-red-800'
+                                : 'bg-white border-slate-200 hover:bg-slate-50 hover:text-indigo-600'
                 }`}
                 onClick={handleCopy}
                 disabled={loading || !isAvailable}
                 title={
-                    !isAvailable 
-                        ? `No recent ${label.toLowerCase()} found` 
-                        : isPriorVisit
-                            ? `Copy ${label} from ${shortDate} (prior visit)`
-                            : `Copy Today's ${label}${cachedContent ? ' (Instant • 0ms)' : ''}`
+                    !isAvailable
+                        ? `No recent ${label.toLowerCase()} found`
+                        : isFlagged
+                            ? `Review flagged before sending: ${cachedRiskMatches.map(m => `"${m.matchedText}"`).join(', ')}`
+                            : isPriorVisit
+                                ? `Copy ${label} from ${shortDate} (prior visit)`
+                                : `Copy Today's ${label}${cachedContent ? ' (Instant • 0ms)' : ''}`
                 }
             >
                 {loading ? (
@@ -190,23 +215,79 @@ function QuickCopyButton({ patientId, type, label, cachedContent, artifactDate, 
                     <Check className="h-3.5 w-3.5 text-green-600" />
                 ) : (
                     <>
-                        <Icon className={`h-3.5 w-3.5 ${!isAvailable ? 'text-slate-300' : isPriorVisit ? 'text-amber-500' : 'text-slate-400 group-hover:text-indigo-600'}`} />
-                        <span>Copy {label}</span>
+                        {isFlagged ? (
+                            <AlertTriangle className="h-3.5 w-3.5 text-red-600" />
+                        ) : (
+                            <Icon className={`h-3.5 w-3.5 ${!isAvailable ? 'text-slate-300' : isPriorVisit ? 'text-amber-500' : 'text-slate-400 group-hover:text-indigo-600'}`} />
+                        )}
+                        <span>{isFlagged ? `Review ${label}` : `Copy ${label}`}</span>
                         {isPriorVisit && shortDate && (
-                            <span className="text-[10px] font-normal text-amber-700 bg-amber-50 border border-amber-200 px-1 rounded">
+                            <span className={`text-[10px] font-normal px-1 rounded border ${
+                                isFlagged
+                                    ? 'text-red-800 bg-red-100 border-red-200'
+                                    : 'text-amber-700 bg-amber-50 border-amber-200'
+                            }`}>
                                 {shortDate}
                             </span>
                         )}
-                        {cachedContent && !isPriorVisit && (
+                        {cachedContent && !isPriorVisit && !isFlagged && (
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" title="Generated today" />
                         )}
                     </>
                 )}
             </Button>
 
+            {/* Soft Gate Modal for Flagged Letters */}
+            {gateState && (
+                <Dialog open={true} onOpenChange={(open) => { if (!open) setGateState(null); }}>
+                    <DialogContent className="sm:max-w-lg" onClick={(e) => e.stopPropagation()}>
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2 text-red-800">
+                                <AlertTriangle className="h-5 w-5 text-red-600" />
+                                Letter Flagged for Review
+                            </DialogTitle>
+                            <DialogDescription>
+                                This letter contains phrasing that may read awkwardly or reference unrecorded consultation details.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-2 max-h-60 overflow-y-auto py-1">
+                            {gateState.matches.map((m, idx) => (
+                                <div key={idx} className="rounded-lg border border-red-200 bg-red-50/70 p-2.5 text-xs space-y-1">
+                                    <div className="font-semibold text-red-900">{m.label}</div>
+                                    <div className="text-red-800 italic">&ldquo;{m.snippet}&rdquo;</div>
+                                </div>
+                            ))}
+                        </div>
+                        <DialogFooter className="gap-2 sm:gap-2">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => {
+                                    const content = gateState.content;
+                                    setGateState(null);
+                                    performCopy(content, true);
+                                }}
+                            >
+                                Copy Anyway
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="destructive"
+                                onClick={() => {
+                                    setGateState(null);
+                                    router.push(`/patient/${patientId}`);
+                                }}
+                            >
+                                Open Patient to Edit
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+            )}
+
             {/* Hidden container for copying with rich formatting */}
             {markdownContent && (
-                <div 
+                <div
                     ref={hiddenRef}
                     style={{ position: 'absolute', left: '-9999px', top: '-9999px', opacity: 0, pointerEvents: 'none' }}
                 >

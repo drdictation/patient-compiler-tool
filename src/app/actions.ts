@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { revalidatePath } from 'next/cache';
 import { getMelbourneDate, ROSTER_EXPIRATION_HOURS } from '@/lib/date-time';
 import { PatientDetails, getPatientDetails } from '@/lib/data';
+import { ClinicalSnapshot } from '@/lib/clinical-snapshot';
 import { cleanPatientDisplayName, normalizePatientName } from '@/lib/patient-name';
 
 // Re-export patient name normalization helpers
@@ -56,6 +57,35 @@ export async function updatePatientDetails(patientId: string, updates: Partial<P
 
     if (error) throw new Error(error.message);
     revalidatePath('/patient/[id]');
+}
+
+export async function savePatientClinicalSnapshot(
+    patientId: string,
+    snapshot: ClinicalSnapshot
+): Promise<{ success: boolean; missingColumn?: boolean; error?: string }> {
+    const payload: ClinicalSnapshot = {
+        keySx: snapshot.keySx || '',
+        phx: snapshot.phx || '',
+        ix: snapshot.ix || '',
+        medsAndPlan: snapshot.medsAndPlan || '',
+        updatedAt: new Date().toISOString(),
+    };
+
+    const { error } = await supabase
+        .from('canonical_patient')
+        .update({ clinical_snapshot: payload })
+        .eq('id', patientId);
+
+    if (error) {
+        const msg = error.message || '';
+        if (msg.includes('clinical_snapshot') || error.code === '42703' || error.code === 'PGRST204') {
+            return { success: false, missingColumn: true, error: msg };
+        }
+        return { success: false, error: msg };
+    }
+
+    revalidatePath(`/patient/${patientId}`);
+    return { success: true };
 }
 
 export async function updateIssueState(issueId: string, newState: string) {
@@ -497,7 +527,7 @@ export async function getPatientTasks(patientId: string) {
 import { generateFromPrompt, SmartNoteGenerationResult, extractTasks, estimateLLMCost } from '@/lib/llm';
 import { SmartNoteModel, CONSULT_NOTE_MODEL, CONSULT_LETTER_MODEL, PATIENT_SUMMARY_MODEL } from '@/lib/model-config';
 import { PROMPTS } from '@/lib/prompts';
-import { resolveLetterPrompt, DETAILED_LETTER_DIRECTIVE } from '@/lib/prompts/registry';
+import { resolveLetterPrompt, DETAILED_LETTER_DIRECTIVE, NO_META_OMISSION_DIRECTIVE } from '@/lib/prompts/registry';
 import { postProcessLetter } from '@/lib/letter-post-processing';
 import { PreparedSmartNoteContext, GenerationException, ClinicalGenerationResult, TaskGenerationResult } from '@/lib/generation/contracts';
 import { normaliseTranscript, validateTranscript, hashTranscript } from '@/lib/generation/transcript';
@@ -865,7 +895,7 @@ export async function generateClinicalDocuments(context: PreparedSmartNoteContex
                 const template = context.outputs.templateType || 'general';
 
                 let prompt = resolveLetterPrompt({ letterType: type, templateType: template });
-                prompt = prompt + "\n\n" + NATURAL_LETTER_STYLE_DIRECTIVE;
+                prompt = prompt + "\n\n" + NATURAL_LETTER_STYLE_DIRECTIVE + "\n\n" + NO_META_OMISSION_DIRECTIVE;
                 if (context.outputs.detailLevel === 'detailed') {
                     prompt = prompt + "\n\n" + DETAILED_LETTER_DIRECTIVE;
                 }
@@ -1130,7 +1160,7 @@ export async function createSmartNote(options: SmartNoteOptions): Promise<SmartN
                 const template = context.outputs.templateType || 'general';
 
                 let prompt = resolveLetterPrompt({ letterType: type, templateType: template });
-                prompt = prompt + "\n\n" + NATURAL_LETTER_STYLE_DIRECTIVE;
+                prompt = prompt + "\n\n" + NATURAL_LETTER_STYLE_DIRECTIVE + "\n\n" + NO_META_OMISSION_DIRECTIVE;
                 if (context.outputs.detailLevel === 'detailed') {
                     prompt = prompt + "\n\n" + DETAILED_LETTER_DIRECTIVE;
                 }
@@ -1990,7 +2020,7 @@ export async function generateAdditionalDocument(
 
         if (documentType === 'referral_letter') {
             const { OUTBOUND_REFERRAL_LETTER } = await import('@/lib/prompts/outbound-referral-letter');
-            let template = OUTBOUND_REFERRAL_LETTER;
+            let template = OUTBOUND_REFERRAL_LETTER + "\n\n" + NO_META_OMISSION_DIRECTIVE;
             if (isComplex) {
                 template = template + "\n\n" + DETAILED_LETTER_DIRECTIVE;
             }
