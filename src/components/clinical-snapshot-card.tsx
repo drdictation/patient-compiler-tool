@@ -1,196 +1,134 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import {
-    ClinicalSnapshot,
-    EMPTY_CLINICAL_SNAPSHOT,
     PriorNoteInput,
-    parseClinicalSnapshotFromNotes,
+    SlicedClinicalHistory,
+    SlicedSectionEntry,
+    slicePriorNotesBySubtitle,
 } from '@/lib/clinical-snapshot';
-import { savePatientClinicalSnapshot } from '@/app/actions';
-import { toast } from 'sonner';
+import ReactMarkdown from 'react-markdown';
 import {
-    Sparkles,
-    Save,
-    Check,
-    Loader2,
     ChevronDown,
     ChevronUp,
     Stethoscope,
     History,
     Microscope,
-    Pill,
-    Edit3,
+    ClipboardList,
 } from 'lucide-react';
 
 interface ClinicalSnapshotCardProps {
-    patientId: string;
-    initialSnapshot?: ClinicalSnapshot | null;
     priorNotes?: PriorNoteInput[];
     mode: 'cockpit' | 'page';
-    onSnapshotChange?: (snapshot: ClinicalSnapshot) => void;
 }
 
 const QUADRANTS: Array<{
-    key: keyof Omit<ClinicalSnapshot, 'updatedAt'>;
+    key: keyof SlicedClinicalHistory;
     label: string;
-    placeholder: string;
+    emptyText: string;
     icon: typeof Stethoscope;
     accent: string;
+    headerBg: string;
 }> = [
     {
-        key: 'keySx',
-        label: 'Key Sx & Active Issues',
-        placeholder: 'Paste or type key symptoms, duration, trajectory...',
+        key: 'issues',
+        label: 'Issues & Interval Hx',
+        emptyText: 'No Issues or Interval History sections found.',
         icon: Stethoscope,
         accent: 'text-rose-600',
+        headerBg: 'bg-rose-50/60',
     },
     {
-        key: 'phx',
-        label: 'PHx / Surgical Hx',
-        placeholder: 'Paste relevant past medical/surgical history...',
+        key: 'phxMeds',
+        label: 'PHx & Meds',
+        emptyText: 'No Past Medical History or Medications sections found.',
         icon: History,
         accent: 'text-indigo-600',
+        headerBg: 'bg-indigo-50/60',
     },
     {
-        key: 'ix',
-        label: 'Key Ix & Scopes',
-        placeholder: 'Colonoscopy, gastroscopy, calprotectin, CT, bloods...',
+        key: 'ixTrials',
+        label: 'Ix & Prior Trials',
+        emptyText: 'No Investigation Results or Trials sections found.',
         icon: Microscope,
         accent: 'text-amber-600',
+        headerBg: 'bg-amber-50/60',
     },
     {
-        key: 'medsAndPlan',
-        label: 'Meds & Last Plan',
-        placeholder: 'Current GI meds, failed trials, last consult plan...',
-        icon: Pill,
+        key: 'plans',
+        label: 'Plans',
+        emptyText: 'No Plan sections found.',
+        icon: ClipboardList,
         accent: 'text-emerald-600',
+        headerBg: 'bg-emerald-50/60',
     },
 ];
 
-function hasAnyContent(snap: ClinicalSnapshot): boolean {
-    return Boolean(
-        snap.keySx.trim() || snap.phx.trim() || snap.ix.trim() || snap.medsAndPlan.trim()
+function SlicedEntryList({
+    entries,
+    emptyText,
+}: {
+    entries: SlicedSectionEntry[];
+    emptyText: string;
+}) {
+    if (entries.length === 0) {
+        return (
+            <p className="text-[11px] text-slate-400 italic py-2 px-1">
+                {emptyText}
+            </p>
+        );
+    }
+
+    return (
+        <div className="space-y-2">
+            {entries.map((entry, idx) => (
+                <div
+                    key={entry.id}
+                    className={`rounded-md border p-2 ${
+                        idx === 0
+                            ? 'border-indigo-200/80 bg-indigo-50/25'
+                            : 'border-slate-100 bg-slate-50/50'
+                    }`}
+                >
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                        <span
+                            className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                                idx === 0
+                                    ? 'bg-indigo-100 text-indigo-800'
+                                    : 'bg-slate-200/70 text-slate-600'
+                            }`}
+                        >
+                            {entry.formattedDate}
+                            {idx === 0 && entries.length > 1 ? ' (Latest)' : ''}
+                        </span>
+                        <span className="text-[9px] uppercase tracking-wide text-slate-400">
+                            {entry.sourceLabel}
+                        </span>
+                    </div>
+                    <div className="prose prose-xs max-w-none text-slate-700 leading-snug [&>p]:my-1 [&>ul]:my-1 [&>ol]:my-1 [&_li]:my-0.5">
+                        <ReactMarkdown>{entry.content}</ReactMarkdown>
+                    </div>
+                </div>
+            ))}
+        </div>
     );
 }
 
-function getLocalStorageKey(patientId: string): string {
-    return `pct_clinical_snapshot_${patientId}`;
-}
-
 export function ClinicalSnapshotCard({
-    patientId,
-    initialSnapshot,
     priorNotes = [],
     mode,
-    onSnapshotChange,
 }: ClinicalSnapshotCardProps) {
-    const [snapshot, setSnapshot] = useState<ClinicalSnapshot>(() => ({
-        ...EMPTY_CLINICAL_SNAPSHOT,
-        ...(initialSnapshot || {}),
-    }));
-    const [isDirty, setIsDirty] = useState(false);
-    const [isSaving, setIsSaving] = useState(false);
-    const [justSaved, setJustSaved] = useState(false);
-    const [usingLocalFallback, setUsingLocalFallback] = useState(false);
+    const sliced = useMemo(() => slicePriorNotesBySubtitle(priorNotes), [priorNotes]);
 
-    // Page mode UI state
-    const [isExpanded, setIsExpanded] = useState(() => hasAnyContent(initialSnapshot || EMPTY_CLINICAL_SNAPSHOT));
-    const [isEditingPage, setIsEditingPage] = useState(false);
+    const totalMatches =
+        sliced.issues.length +
+        sliced.phxMeds.length +
+        sliced.ixTrials.length +
+        sliced.plans.length;
 
-    // Load localStorage fallback on mount if DB snapshot is empty
-    useEffect(() => {
-        if (hasAnyContent(initialSnapshot || EMPTY_CLINICAL_SNAPSHOT)) {
-            setSnapshot({ ...EMPTY_CLINICAL_SNAPSHOT, ...initialSnapshot });
-            return;
-        }
-        try {
-            const raw = localStorage.getItem(getLocalStorageKey(patientId));
-            if (raw) {
-                const parsed = JSON.parse(raw) as ClinicalSnapshot;
-                if (hasAnyContent(parsed)) {
-                    setSnapshot({ ...EMPTY_CLINICAL_SNAPSHOT, ...parsed });
-                    setIsExpanded(true);
-                    setUsingLocalFallback(true);
-                }
-            }
-        } catch {
-            // Ignore malformed local cache
-        }
-    }, [patientId, initialSnapshot]);
-
-    const persistSnapshot = useCallback(async (nextSnap: ClinicalSnapshot, silent = false) => {
-        setIsSaving(true);
-        try {
-            const res = await savePatientClinicalSnapshot(patientId, nextSnap);
-            if (res.success) {
-                try {
-                    localStorage.removeItem(getLocalStorageKey(patientId));
-                } catch {}
-                setUsingLocalFallback(false);
-                setIsDirty(false);
-                setJustSaved(true);
-                setTimeout(() => setJustSaved(false), 2000);
-                onSnapshotChange?.(nextSnap);
-                if (!silent) toast.success('Clinical snapshot saved');
-            } else if (res.missingColumn) {
-                try {
-                    localStorage.setItem(getLocalStorageKey(patientId), JSON.stringify({
-                        ...nextSnap,
-                        updatedAt: new Date().toISOString(),
-                    }));
-                } catch {}
-                setUsingLocalFallback(true);
-                setIsDirty(false);
-                setJustSaved(true);
-                setTimeout(() => setJustSaved(false), 2000);
-                onSnapshotChange?.(nextSnap);
-                if (!silent) {
-                    toast.info('Saved locally on this device (run supabase_migration_clinical_snapshot.sql to sync across devices)');
-                }
-            } else {
-                toast.error(res.error || 'Failed to save snapshot');
-            }
-        } catch (err: any) {
-            toast.error(err?.message || 'Failed to save snapshot');
-        } finally {
-            setIsSaving(false);
-        }
-    }, [patientId, onSnapshotChange]);
-
-    const handleFieldChange = (field: keyof Omit<ClinicalSnapshot, 'updatedAt'>, value: string) => {
-        setSnapshot(prev => ({ ...prev, [field]: value }));
-        setIsDirty(true);
-        setJustSaved(false);
-    };
-
-    const handleAutoFill = () => {
-        if (!priorNotes || priorNotes.length === 0) {
-            toast.info('No prior consult notes available to auto-fill from');
-            return;
-        }
-        const extracted = parseClinicalSnapshotFromNotes(priorNotes);
-        if (!hasAnyContent(extracted)) {
-            toast.info('Could not match structured sections in prior notes — you can paste directly');
-            return;
-        }
-        const merged: ClinicalSnapshot = {
-            keySx: snapshot.keySx.trim() ? snapshot.keySx : extracted.keySx,
-            phx: snapshot.phx.trim() ? snapshot.phx : extracted.phx,
-            ix: snapshot.ix.trim() ? snapshot.ix : extracted.ix,
-            medsAndPlan: snapshot.medsAndPlan.trim() ? snapshot.medsAndPlan : extracted.medsAndPlan,
-        };
-        setSnapshot(merged);
-        setIsDirty(true);
-        if (mode === 'page') {
-            setIsExpanded(true);
-            setIsEditingPage(true);
-        }
-        toast.success('Auto-filled empty fields from prior notes');
-    };
+    const [isExpanded, setIsExpanded] = useState(() => totalMatches > 0);
 
     if (mode === 'cockpit') {
         return (
@@ -198,74 +136,39 @@ export function ClinicalSnapshotCard({
                 <div className="flex items-center justify-between gap-2 flex-shrink-0">
                     <div className="flex items-center gap-2 min-w-0">
                         <span className="text-xs font-semibold text-slate-700 truncate">
-                            Quick Reference (PHx / Sx / Ix / Plan)
+                            Auto-Sliced Consult History
                         </span>
                         <Badge variant="outline" className="text-[10px] h-5 px-1.5 font-normal text-slate-500 bg-white">
-                            Reference only
+                            Newest first • Regex only
                         </Badge>
-                        {usingLocalFallback && (
-                            <Badge variant="outline" className="text-[10px] h-5 px-1.5 text-amber-700 border-amber-200 bg-amber-50">
-                                Local cache
-                            </Badge>
-                        )}
                     </div>
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={handleAutoFill}
-                            disabled={priorNotes.length === 0}
-                            className="h-7 px-2 text-xs gap-1 bg-white"
-                            title="Populate empty boxes from prior consult notes"
-                        >
-                            <Sparkles className="h-3 w-3 text-indigo-600" />
-                            Auto-fill
-                        </Button>
-                        <Button
-                            type="button"
-                            variant={isDirty ? 'default' : 'outline'}
-                            size="sm"
-                            onClick={() => persistSnapshot(snapshot)}
-                            disabled={isSaving || (!isDirty && !justSaved)}
-                            className="h-7 px-2.5 text-xs gap-1"
-                        >
-                            {isSaving ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : justSaved ? (
-                                <Check className="h-3 w-3 text-emerald-600" />
-                            ) : (
-                                <Save className="h-3 w-3" />
-                            )}
-                            {isSaving ? 'Saving' : justSaved ? 'Saved' : 'Save'}
-                        </Button>
-                    </div>
+                    <span className="text-[11px] text-slate-500 flex-shrink-0">
+                        {priorNotes.length} {priorNotes.length === 1 ? 'consult' : 'consults'}
+                    </span>
                 </div>
 
-                {/* 2x2 zero-scroll grid */}
+                {/* 2x2 zero-scroll grid — each box scrolls independently if history is long */}
                 <div className="flex-1 min-h-0 grid grid-cols-2 grid-rows-2 gap-2.5">
                     {QUADRANTS.map((q) => {
                         const Icon = q.icon;
+                        const entries = sliced[q.key];
                         return (
                             <div
                                 key={q.key}
-                                className="flex flex-col min-h-0 rounded-lg border border-slate-200 bg-white p-2 shadow-2xs"
+                                className="flex flex-col min-h-0 rounded-lg border border-slate-200 bg-white overflow-hidden shadow-2xs"
                             >
-                                <label className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700 mb-1 flex-shrink-0">
-                                    <Icon className={`h-3.5 w-3.5 ${q.accent}`} />
-                                    <span>{q.label}</span>
-                                </label>
-                                <Textarea
-                                    value={snapshot[q.key]}
-                                    onChange={(e) => handleFieldChange(q.key, e.target.value)}
-                                    onBlur={() => {
-                                        if (isDirty && !isSaving) {
-                                            persistSnapshot(snapshot, true);
-                                        }
-                                    }}
-                                    placeholder={q.placeholder}
-                                    className="flex-1 min-h-0 resize-none border-0 p-1 text-xs leading-relaxed bg-slate-50/50 focus-visible:ring-1 focus-visible:bg-white rounded"
-                                />
+                                <div className={`px-2.5 py-1.5 border-b border-slate-100 flex items-center justify-between flex-shrink-0 ${q.headerBg}`}>
+                                    <span className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-800">
+                                        <Icon className={`h-3.5 w-3.5 ${q.accent}`} />
+                                        <span>{q.label}</span>
+                                    </span>
+                                    <Badge variant="secondary" className="h-4 px-1.5 text-[10px] bg-white/80 text-slate-600">
+                                        {entries.length}
+                                    </Badge>
+                                </div>
+                                <div className="flex-1 min-h-0 overflow-y-auto p-2">
+                                    <SlicedEntryList entries={entries} emptyText={q.emptyText} />
+                                </div>
                             </div>
                         );
                     })}
@@ -274,9 +177,7 @@ export function ClinicalSnapshotCard({
         );
     }
 
-    // PAGE MODE (collapsible header card on PatientContentView)
-    const populated = hasAnyContent(snapshot);
-
+    // PAGE MODE (collapsible 4-column summary at top of PatientContentView)
     return (
         <section className="rounded-xl border border-slate-200 bg-white shadow-2xs overflow-hidden">
             <div
@@ -286,101 +187,45 @@ export function ClinicalSnapshotCard({
                 <div className="flex items-center gap-2 min-w-0">
                     <Stethoscope className="h-4 w-4 text-indigo-600 flex-shrink-0" />
                     <span className="text-xs font-semibold uppercase tracking-wide text-slate-800">
-                        Clinical Snapshot
+                        Consult Snapshot
                     </span>
                     <span className="text-[11px] text-slate-500 truncate hidden sm:inline">
-                        {populated ? 'PHx • Key Sx • Ix • Meds & Plan' : 'Click to paste PHx, Key Sx, Ix, or auto-fill'}
+                        Auto-sliced newest first: Issues • PHx &amp; Meds • Ix &amp; Trials • Plans
                     </span>
                 </div>
-                <div className="flex items-center gap-1.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                    {isExpanded && !isEditingPage && (
-                        <>
-                            {priorNotes.length > 0 && (
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={handleAutoFill}
-                                    className="h-7 px-2 text-xs gap-1 text-indigo-700"
-                                >
-                                    <Sparkles className="h-3 w-3" />
-                                    Auto-fill
-                                </Button>
-                            )}
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setIsEditingPage(true)}
-                                className="h-7 px-2 text-xs gap-1"
-                            >
-                                <Edit3 className="h-3 w-3" />
-                                Edit
-                            </Button>
-                        </>
-                    )}
-                    {isExpanded && isEditingPage && (
-                        <>
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setIsEditingPage(false)}
-                                className="h-7 px-2 text-xs"
-                            >
-                                Done
-                            </Button>
-                            <Button
-                                type="button"
-                                size="sm"
-                                onClick={async () => {
-                                    await persistSnapshot(snapshot);
-                                    setIsEditingPage(false);
-                                }}
-                                disabled={isSaving}
-                                className="h-7 px-2.5 text-xs gap-1"
-                            >
-                                {isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-                                Save
-                            </Button>
-                        </>
-                    )}
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setIsExpanded(prev => !prev)}
-                        className="h-7 w-7"
-                    >
-                        {isExpanded ? <ChevronUp className="h-4 w-4 text-slate-500" /> : <ChevronDown className="h-4 w-4 text-slate-500" />}
-                    </Button>
-                </div>
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setIsExpanded(prev => !prev);
+                    }}
+                    className="h-7 w-7"
+                >
+                    {isExpanded ? <ChevronUp className="h-4 w-4 text-slate-500" /> : <ChevronDown className="h-4 w-4 text-slate-500" />}
+                </Button>
             </div>
 
             {isExpanded && (
                 <div className="p-3 border-t border-slate-100 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                     {QUADRANTS.map((q) => {
                         const Icon = q.icon;
-                        const val = snapshot[q.key];
+                        const entries = sliced[q.key];
                         return (
-                            <div key={q.key} className="rounded-lg border border-slate-100 bg-slate-50/50 p-2.5 flex flex-col gap-1">
-                                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700">
-                                    <Icon className={`h-3.5 w-3.5 ${q.accent}`} />
-                                    <span>{q.label}</span>
+                            <div key={q.key} className="rounded-lg border border-slate-200 bg-white flex flex-col overflow-hidden">
+                                <div className={`px-2.5 py-1.5 border-b border-slate-100 flex items-center justify-between ${q.headerBg}`}>
+                                    <span className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-800">
+                                        <Icon className={`h-3.5 w-3.5 ${q.accent}`} />
+                                        <span>{q.label}</span>
+                                    </span>
+                                    <Badge variant="secondary" className="h-4 px-1.5 text-[10px] bg-white/80 text-slate-600">
+                                        {entries.length}
+                                    </Badge>
                                 </div>
-                                {isEditingPage ? (
-                                    <Textarea
-                                        value={val}
-                                        onChange={(e) => handleFieldChange(q.key, e.target.value)}
-                                        placeholder={q.placeholder}
-                                        rows={4}
-                                        className="text-xs bg-white resize-y min-h-[76px]"
-                                    />
-                                ) : (
-                                    <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">
-                                        {val.trim() || <span className="text-slate-400 italic">Not recorded</span>}
-                                    </p>
-                                )}
+                                <div className="p-2 max-h-56 overflow-y-auto">
+                                    <SlicedEntryList entries={entries} emptyText={q.emptyText} />
+                                </div>
                             </div>
                         );
                     })}

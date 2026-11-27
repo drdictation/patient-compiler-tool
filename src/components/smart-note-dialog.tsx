@@ -54,7 +54,6 @@ import ReactMarkdown from 'react-markdown';
 import { requestScreenWakeLock, releaseScreenWakeLock } from '@/lib/audio/wake-lock';
 import { PatientQaWidget } from '@/components/patient-qa-widget';
 import { ClinicalSnapshotCard } from '@/components/clinical-snapshot-card';
-import { ClinicalSnapshot } from '@/lib/clinical-snapshot';
 import { copyMarkdownAsRichHtml } from '@/lib/clipboard';
 import { scanLetterRiskPhrases, hasLetterRiskPhrases } from '@/lib/generation/letter-risk-phrases';
 
@@ -64,7 +63,6 @@ interface SmartNoteDialogProps {
     asMobileButton?: boolean;
     mode?: 'standard' | 'quick-record';
     priorNotes?: Array<{ id: string; encounterDate: string; label: string; content: string }>;
-    initialSnapshot?: ClinicalSnapshot | null;
     open?: boolean;
     onOpenChange?: (open: boolean) => void;
     onGenerated?: (patientId: string, artifacts: { note?: string; letter?: string; summary?: string }) => void;
@@ -90,7 +88,6 @@ export function SmartNoteDialog({
     asMobileButton = false,
     mode = 'standard',
     priorNotes = [],
-    initialSnapshot = null,
     open: controlledOpen,
     onOpenChange: controlledOnOpenChange,
     onGenerated
@@ -1333,8 +1330,6 @@ export function SmartNoteDialog({
 
                             <TabsContent value="snapshot" className="flex-1 min-h-0 mt-0 flex flex-col">
                                 <ClinicalSnapshotCard
-                                    patientId={patientId}
-                                    initialSnapshot={initialSnapshot}
                                     priorNotes={priorNotes}
                                     mode="cockpit"
                                 />

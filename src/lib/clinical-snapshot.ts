@@ -20,103 +20,198 @@ export interface PriorNoteInput {
     content: string;
 }
 
-const HEADING_REGEX = /^(?:#{1,4}\s*|\*\*|__)?([A-Za-z0-9 &/\-()]+?)(?:\*\*|__)?\s*:?\s*$/;
-
-function cleanLines(lines: string[], maxLines: number = 5): string {
-    return lines
-        .map(l => l.replace(/^\s*[-*•]\s*/, '• ').trim())
-        .filter(Boolean)
-        .slice(0, maxLines)
-        .join('\n');
+export interface SlicedSectionEntry {
+    id: string;
+    encounterDate: string;
+    formattedDate: string;
+    sourceLabel: string;
+    content: string;
 }
 
-function classifyHeading(heading: string): keyof Omit<ClinicalSnapshot, 'updatedAt'> | null {
-    const h = heading.toLowerCase().trim();
-    if (/^(past\s+(?:medical|surgical)\s+history|pmhx|phx|background|medical\s+history|co-?morbidities)$/.test(h)) {
-        return 'phx';
+export interface SlicedClinicalHistory {
+    issues: SlicedSectionEntry[];
+    phxMeds: SlicedSectionEntry[];
+    ixTrials: SlicedSectionEntry[];
+    plans: SlicedSectionEntry[];
+}
+
+type BucketKey = keyof SlicedClinicalHistory;
+type HeadingTarget = BucketKey | 'ignore' | null;
+
+const HEADING_LINE_RX = /^(?:#{1,4}\s+(.+?)\s*|\*\*([^*]+?)\*\*:?\s*|__([^_]+?)__:?\s*|([A-Z][A-Za-z0-9 &/\-()]{2,50}):\s*)$/;
+const SIGN_OFF_STOP_RX = /^(?:yours\s+sincerely|yours\s+faithfully|kind\s+regards|best\s+regards|warm\s+regards|no\s+action\s+required|action\s+required|action\s+requested)\b/i;
+
+function classifyTopLevelHeading(rawHeading: string): HeadingTarget {
+    const h = rawHeading
+        .toLowerCase()
+        .replace(/&/g, 'and')
+        .replace(/[:*#]+/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    if (/^(?:current\s+issues?|issues?|interval\s+history|summary|active\s+issues?|presenting\s+complaint|history\s+of\s+presenting\s+complaint|hpc|clinical\s+summary)$/.test(h)) {
+        return 'issues';
     }
-    if (/^(summary|active\s+issues?|key\s+symptoms?|presenting\s+complaint|history\s+of\s+presenting\s+complaint|hpc|clinical\s+summary|interval\s+history|symptoms?)$/.test(h)) {
-        return 'keySx';
+    if (/^(?:past\s+medical\s+history\s+and\s+medications?|past\s+medical(?:\/surgical)?\s+history|past\s+surgical\s+history|pmhx|phx|medical\s+history|medications?|current\s+medications?|medications?\s+and\s+allergies)$/.test(h)) {
+        return 'phxMeds';
     }
-    if (/^(investigations?|results?|endoscopy|colonoscopy|gastroscopy|pathology|imaging|bloods|recent\s+results)$/.test(h)) {
-        return 'ix';
+    if (/^(?:investigation\s+results?|investigations?\s+and\s+previous\s+trials?|investigations?|results?|previous\s+trials?|prior\s+trials?|prior\s+treatments?|endoscopy\s+and\s+investigations?)$/.test(h)) {
+        return 'ixTrials';
     }
-    if (/^(medications?|current\s+medications?|impression\s*(?:and|&)\s*plan|plan|management|treatment)$/.test(h)) {
-        return 'medsAndPlan';
+    if (/^(?:plan|impression\s+and\s+plan|management|impression)$/.test(h)) {
+        return 'plans';
+    }
+    if (/^(?:dietary\s+history|diet|social\s+and\s+family\s+history|social\s+history|family\s+history|medicolegal\s+and\s+consent|medicolegal|consent|examination|physical\s+examination|additional\s+clinical\s+notes?)$/.test(h)) {
+        return 'ignore';
     }
     return null;
 }
 
-/**
- * Deterministically parses the most recent prior consult note/letter into the
- * four Clinical Snapshot quadrants (Key Sx, PHx, Ix, Meds & Last Plan).
- * Zero LLM calls, instant 0ms.
- */
-export function parseClinicalSnapshotFromNotes(priorNotes: PriorNoteInput[]): ClinicalSnapshot {
-    if (!priorNotes || priorNotes.length === 0) {
-        return { ...EMPTY_CLINICAL_SNAPSHOT };
+function formatConsultDate(encounterDate: string): string {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(encounterDate)) {
+        return encounterDate;
     }
+    const d = new Date(`${encounterDate}T00:00:00`);
+    if (Number.isNaN(d.getTime())) {
+        return encounterDate;
+    }
+    return d.toLocaleDateString('en-AU', {
+        timeZone: 'Australia/Melbourne',
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+    });
+}
 
-    const buckets: Record<keyof Omit<ClinicalSnapshot, 'updatedAt'>, string[]> = {
-        keySx: [],
-        phx: [],
-        ix: [],
-        medsAndPlan: [],
+function sortNotesNewestFirst(notes: PriorNoteInput[]): PriorNoteInput[] {
+    return [...notes].sort((a, b) => {
+        if (a.encounterDate === b.encounterDate) return 0;
+        if (a.encounterDate === 'Today') return -1;
+        if (b.encounterDate === 'Today') return 1;
+        return b.encounterDate.localeCompare(a.encounterDate);
+    });
+}
+
+/**
+ * Deterministically slices prior consult notes by subtitle/heading using regex (zero LLM),
+ * stacking extracted sections newest-consult-first into 4 boxes:
+ * - Issues & Interval Hx
+ * - PHx & Meds
+ * - Ix & Prior Trials
+ * - Plans
+ *
+ * Unknown bold subheadings (e.g. "**Ulcerative Colitis**" under Current Issues) are preserved
+ * inside their parent section rather than ending capture.
+ */
+export function slicePriorNotesBySubtitle(priorNotes: PriorNoteInput[]): SlicedClinicalHistory {
+    const result: SlicedClinicalHistory = {
+        issues: [],
+        phxMeds: [],
+        ixTrials: [],
+        plans: [],
     };
 
-    // Scan up to 2 most recent notes so we catch PHx if omitted on a brief follow-up
-    const recentNotes = priorNotes.slice(0, 2);
+    if (!priorNotes || priorNotes.length === 0) {
+        return result;
+    }
 
-    for (const note of recentNotes) {
+    const sortedNotes = sortNotesNewestFirst(priorNotes);
+
+    for (const note of sortedNotes) {
+        if (!note.content || !note.content.trim()) continue;
+
+        const bucketLines: Record<BucketKey, string[]> = {
+            issues: [],
+            phxMeds: [],
+            ixTrials: [],
+            plans: [],
+        };
+
+        let activeBucket: BucketKey | 'ignore' | null = null;
+        let pendingSubheader: { bucket: BucketKey; title: string } | null = null;
         const lines = note.content.split(/\r?\n/);
-        let currentBucket: keyof Omit<ClinicalSnapshot, 'updatedAt'> | null = null;
 
         for (const rawLine of lines) {
             const trimmed = rawLine.trim();
-            if (!trimmed) continue;
-
-            // Check inline "Heading: content" format first
-            const inlineMatch = trimmed.match(/^(?:\*\*|__)?([A-Za-z][A-Za-z0-9 &/\-]{2,35})(?:\*\*|__)?\s*:\s+(.+)$/);
-            if (inlineMatch) {
-                const matchedBucket = classifyHeading(inlineMatch[1]);
-                if (matchedBucket) {
-                    currentBucket = matchedBucket;
-                    if (buckets[matchedBucket].length < 5) {
-                        buckets[matchedBucket].push(inlineMatch[2].trim());
-                    }
-                    continue;
+            if (!trimmed) {
+                if (activeBucket && activeBucket !== 'ignore' && bucketLines[activeBucket].length > 0) {
+                    const last = bucketLines[activeBucket][bucketLines[activeBucket].length - 1];
+                    if (last !== '') bucketLines[activeBucket].push('');
                 }
-            }
-
-            // Check standalone heading line
-            const headingMatch = trimmed.match(HEADING_REGEX);
-            if (headingMatch && trimmed.length <= 60) {
-                const matchedBucket = classifyHeading(headingMatch[1]);
-                if (matchedBucket) {
-                    currentBucket = matchedBucket;
-                    continue;
-                } else if (/^#{1,4}\s/.test(trimmed) || /^\*\*[^*]+\*\*:?$/.test(trimmed)) {
-                    // Unrelated section heading ends current capture
-                    currentBucket = null;
-                    continue;
-                }
-            }
-
-            if (/^(yours\s+sincerely|kind\s+regards|no\s+action\s+required|action\s+required)/i.test(trimmed)) {
-                currentBucket = null;
                 continue;
             }
 
-            if (currentBucket && buckets[currentBucket].length < 6) {
-                buckets[currentBucket].push(trimmed);
+            if (SIGN_OFF_STOP_RX.test(trimmed)) {
+                activeBucket = 'ignore';
+                pendingSubheader = null;
+                continue;
+            }
+
+            const headingMatch = trimmed.match(HEADING_LINE_RX);
+            if (headingMatch) {
+                const rawTitle = (headingMatch[1] || headingMatch[2] || headingMatch[3] || headingMatch[4] || '').trim();
+                const target = classifyTopLevelHeading(rawTitle);
+
+                if (target === 'ignore') {
+                    activeBucket = 'ignore';
+                    pendingSubheader = null;
+                    continue;
+                }
+
+                if (target !== null) {
+                    activeBucket = target;
+                    // For Issues & Interval Hx, preserve whether a block is Interval History vs Current Issues
+                    if (target === 'issues' && /^(?:interval\s+history|current\s+issues?|issues?)$/i.test(rawTitle)) {
+                        pendingSubheader = { bucket: 'issues', title: `**${rawTitle}**` };
+                    } else {
+                        pendingSubheader = null;
+                    }
+                    continue;
+                }
+                // target === null -> bold clinical subheading (e.g. **Ulcerative Colitis**), fall through to capture
+            }
+
+            if (activeBucket && activeBucket !== 'ignore') {
+                if (pendingSubheader && pendingSubheader.bucket === activeBucket) {
+                    if (bucketLines[activeBucket].length > 0) {
+                        const last = bucketLines[activeBucket][bucketLines[activeBucket].length - 1];
+                        if (last !== '') bucketLines[activeBucket].push('');
+                    }
+                    bucketLines[activeBucket].push(pendingSubheader.title);
+                    pendingSubheader = null;
+                }
+                bucketLines[activeBucket].push(rawLine.trimEnd());
             }
         }
+
+        const formattedDate = formatConsultDate(note.encounterDate);
+
+        (['issues', 'phxMeds', 'ixTrials', 'plans'] as BucketKey[]).forEach((key) => {
+            const joined = bucketLines[key].join('\n').trim();
+            if (joined) {
+                result[key].push({
+                    id: `${note.id}-${key}`,
+                    encounterDate: note.encounterDate,
+                    formattedDate,
+                    sourceLabel: note.label,
+                    content: joined,
+                });
+            }
+        });
     }
 
+    return result;
+}
+
+/**
+ * Legacy helper retained for compatibility with earlier snapshot exports.
+ */
+export function parseClinicalSnapshotFromNotes(priorNotes: PriorNoteInput[]): ClinicalSnapshot {
+    const sliced = slicePriorNotesBySubtitle(priorNotes);
     return {
-        keySx: cleanLines(buckets.keySx, 5),
-        phx: cleanLines(buckets.phx, 5),
-        ix: cleanLines(buckets.ix, 5),
-        medsAndPlan: cleanLines(buckets.medsAndPlan, 6),
+        keySx: sliced.issues[0]?.content || '',
+        phx: sliced.phxMeds[0]?.content || '',
+        ix: sliced.ixTrials[0]?.content || '',
+        medsAndPlan: sliced.plans[0]?.content || '',
     };
 }

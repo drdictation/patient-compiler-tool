@@ -52,8 +52,6 @@ export function PatientContentView({
     return (
         <div className="max-w-5xl mx-auto px-4 lg:px-8 py-4 md:py-8 flex flex-col gap-6 md:gap-8 print:max-w-full print:px-0">
             <ClinicalSnapshotCard
-                patientId={patient.id}
-                initialSnapshot={patient.clinical_snapshot}
                 priorNotes={priorNotes}
                 mode="page"
             />
